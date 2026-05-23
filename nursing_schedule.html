@@ -526,16 +526,24 @@ function renderAdmin(){
 }
 
 function renderReqList(y,m){
-  let h=`<div class="card"><div class="card-t">全スタッフ希望休一覧</div>`;
+  const days=dim(y,m);
+  let h=`<div class="card"><div class="card-t">全スタッフ希望休一覧・手動入力</div>
+    <div class="ib" style="margin-bottom:10px">📝 各スタッフの名前横の「編集」から希望休を手動で追加・削除できます</div>`;
   ['nurse','care','bait'].forEach(type=>{
     const lbl=type==='nurse'?'看護師':type==='care'?'介護士':'看護バイト';
+    const cls=type==='nurse'?'ns':type==='care'?'cs':'bs2';
     h+=`<div style="font-size:11px;font-weight:700;color:var(--txt2);margin:10px 0 5px;padding-bottom:4px;border-bottom:2px solid var(--border)">${lbl}</div>`;
     S.staffList.filter(s=>s.type===type).forEach(s=>{
       const reqs=getReqs(y,m,s.id);
-      h+=`<div class="staff-item">
-        <span style="font-size:12px">${s.name}</span>
-        <div style="display:flex;gap:3px;flex-wrap:wrap;justify-content:flex-end;max-width:200px">
-          ${reqs.length===0?'<span style="color:var(--txt3);font-size:11px">なし</span>':reqs.map(d=>`<span class="req-dot">${d}</span>`).join('')}
+      h+=`<div class="staff-item" style="flex-wrap:wrap;gap:4px">
+        <div style="display:flex;align-items:center;gap:6px;width:100%;justify-content:space-between">
+          <span style="font-size:12px;font-weight:500">${s.name}</span>
+          <button onclick="openReqEdit('${s.id}')" style="padding:4px 10px;border:1px solid var(--border);border-radius:7px;background:#fafafa;font-size:11px;cursor:pointer;flex-shrink:0">✏️ 編集</button>
+        </div>
+        <div style="display:flex;gap:3px;flex-wrap:wrap;width:100%;margin-top:2px">
+          ${reqs.length===0
+            ?'<span style="color:var(--txt3);font-size:11px">希望休なし</span>'
+            :reqs.map(d=>`<span class="req-dot" title="${d}日">${d}</span>`).join('')}
         </div>
       </div>`;
     });
@@ -821,6 +829,84 @@ function clearMonth(){
   });
   showFlash(`${y}年${m+1}月のデータを削除しました`,'wb');
   render();
+}
+
+// ============================================================
+//  管理者：希望休 手動入力モーダル
+// ============================================================
+function openReqEdit(sid){
+  const y=S.aYr,m=S.aMo;
+  const staff=S.staffList.find(s=>s.id===sid);
+  const reqs=getReqs(y,m,sid);
+  const days=dim(y,m);
+  const wl=['日','月','火','水','木','金','土'];
+  const first=dow(y,m,1);
+  let calH=`<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px;margin-bottom:12px">`;
+  [['日','#A32D2D'],['月',''],['火',''],['水',''],['木',''],['金',''],['土','#185FA5']].forEach(([d,c])=>{
+    calH+=`<div style="text-align:center;font-size:10px;font-weight:600;padding:3px 0;border-radius:3px;${c?`background:${c};color:#fff`:''}">${d}</div>`;
+  });
+  for(let i=0;i<first;i++) calH+=`<div></div>`;
+  for(let d=1;d<=days;d++){
+    const w=dow(y,m,d);
+    const hol=isHoliday(y,m,d);
+    const isReq=reqs.includes(d);
+    const isSat=w===6,isSun=w===0||hol;
+    const bg=isReq?'#FAEEDA':isSat?'rgba(24,95,165,.08)':isSun?'rgba(163,45,45,.08)':'#fafafa';
+    const border=isReq?'1.5px solid #854F0B':isSat?'1px solid rgba(24,95,165,.3)':isSun?'1px solid rgba(163,45,45,.3)':'1px solid #e0e0e0';
+    const dnCol=isSat?'#185FA5':isSun?'#A32D2D':'#1a1a1a';
+    calH+=`<div onclick="adminTogReq('${sid}',${d})" style="min-height:38px;display:flex;flex-direction:column;align-items:center;justify-content:center;border-radius:6px;cursor:pointer;background:${bg};border:${border};transition:all .1s">
+      <span style="font-size:12px;font-weight:600;color:${dnCol}">${d}</span>
+      ${isReq?`<span style="font-size:8px;color:#633806;font-weight:600">希望休</span>`:''}
+      ${hol?`<span style="font-size:7px;color:#A32D2D">祝</span>`:''}
+    </div>`;
+  }
+  calH+=`</div>`;
+  const typeCls=staff.type==='nurse'?'ns':staff.type==='care'?'cs':'bs2';
+  const typeLbl=staff.type==='nurse'?'看護師':staff.type==='care'?'介護士':'看護バイト';
+  document.getElementById('modal-area').innerHTML=`
+  <div style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:500;display:flex;align-items:flex-end;justify-content:center;backdrop-filter:blur(2px)" onclick="closeModal()">
+    <div style="background:#fff;border-radius:20px 20px 0 0;padding:20px 16px;width:100%;max-width:500px;max-height:90vh;overflow-y:auto" onclick="event.stopPropagation()">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+        <h3 style="font-size:16px;font-weight:600">${staff.name}</h3>
+        <button onclick="closeModal()" style="border:none;background:none;font-size:22px;color:#999;cursor:pointer;padding:0 4px">×</button>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:12px">
+        <span style="display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;background:${staff.type==='nurse'?'#E6F1FB':staff.type==='care'?'#EAF3DE':'#FAEEDA'};color:${staff.type==='nurse'?'#0C447C':staff.type==='care'?'#27500A':'#633806'}">${typeLbl}</span>
+        <span style="font-size:12px;color:#666">${y}年${m+1}月　希望休：<strong style="color:#633806">${reqs.length}</strong>/${MAX_REQ}回</span>
+      </div>
+      <div style="background:#FDF4FF;border-left:4px solid #854F0B;border-radius:6px;padding:8px 12px;font-size:11px;color:#633806;margin-bottom:12px;line-height:1.6">
+        📌 日付をタップして希望休を登録・解除できます。管理者入力のため入力期間制限はありません。
+      </div>
+      ${calH}
+      <div style="display:flex;gap:8px">
+        <button onclick="adminClearReqs('${sid}')" style="flex:1;padding:9px;background:#fff;color:#A32D2D;border:1px solid #F7C1C1;border-radius:8px;font-size:12px;cursor:pointer">🗑 全て削除</button>
+        <button onclick="closeModal()" style="flex:1;padding:9px;background:#185FA5;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">完了</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function adminTogReq(sid,day){
+  const y=S.aYr,m=S.aMo;
+  let reqs=[...getReqs(y,m,sid)];
+  if(reqs.includes(day)){
+    reqs=reqs.filter(d=>d!==day);
+  } else {
+    if(reqs.length>=MAX_REQ){
+      if(!confirm(reqs.length+'回登録済みです。上限を超えて追加しますか？'))return;
+    }
+    reqs.push(day);
+    reqs.sort((a,b)=>a-b);
+  }
+  saveReqs(y,m,sid,reqs);
+  openReqEdit(sid);
+}
+
+function adminClearReqs(sid){
+  const y=S.aYr,m=S.aMo;
+  if(!confirm('この月の希望休を全て削除しますか？'))return;
+  saveReqs(y,m,sid,[]);
+  openReqEdit(sid);
 }
 
 // ============================================================

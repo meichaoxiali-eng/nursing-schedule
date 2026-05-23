@@ -679,10 +679,11 @@ function renderAlertsTab(y,m,data){
     if(!s.nightOk||s.nightMax===0)return;
     let cnt=0;for(let d=1;d<=days;d++){if((data[s.id]||{})[d]==='夜勤')cnt++;}
     if(cnt>s.nightMax)alerts.push({t:'ng',m:`${s.name}：夜勤超過（${cnt}/${s.nightMax}回）`});
+    const maxDayRun=(s.id==='kanri-ns'||s.id==='kanri-care')?5:4;
     let run=0;
     for(let d=1;d<=days;d++){
       const sh=(data[s.id]||{})[d]||'';
-      if(sh==='日勤'){run++;if(run>4)alerts.push({t:'wb',m:`${s.name}：日勤連勤超過（${d}日付近）`});}
+      if(sh==='日勤'){run++;if(run>maxDayRun)alerts.push({t:'wb',m:`${s.name}：日勤連勤超過（${d}日付近）`});}
       else run=0;
     }
     for(let d=2;d<=days;d++){
@@ -980,11 +981,12 @@ function genDraft(){
   });
 
   S.staffList.forEach(s=>{
+    const maxRun=(s.id==='kanri-ns'||s.id==='kanri-care')?5:4;
     let dayRun=0;
     for(let d=1;d<=days;d++){
       if(data[s.id][d]===''){
         if(s.nightOnly||s.nightCenter){data[s.id][d]='休み';dayRun=0;}
-        else if(dayRun>=4){data[s.id][d]='休み';dayRun=0;}
+        else if(dayRun>=maxRun){data[s.id][d]='休み';dayRun=0;}
         else{data[s.id][d]='日勤';dayRun++;}
       }else if(data[s.id][d]==='日勤')dayRun++;
       else dayRun=0;

@@ -208,21 +208,21 @@ function isHoliday(y,m,d){
 //  デフォルトスタッフ
 // ============================================================
 const DEFAULT_STAFF=[
-  {id:'kanri-ns',name:'管理者（看護）',type:'nurse',nightOk:false,weekendOff:true,nightMax:0,dayOnly:true,nightCenter:false,nightOnly:false},
-  {id:'day-a',name:'日勤専任A（看護）',type:'nurse',nightOk:false,weekendOff:false,nightMax:0,dayOnly:true,nightCenter:false,nightOnly:false},
-  {id:'day-b',name:'日勤専任B（看護）',type:'nurse',nightOk:false,weekendOff:false,nightMax:0,dayOnly:true,nightCenter:false,nightOnly:false},
-  {id:'night-c',name:'夜勤多めC（看護）',type:'nurse',nightOk:true,weekendOff:false,nightMax:10,dayOnly:false,nightCenter:false,nightOnly:false},
-  {id:'night-d',name:'夜勤4回D（看護）',type:'nurse',nightOk:true,weekendOff:false,nightMax:4,dayOnly:false,nightCenter:false,nightOnly:false},
-  {id:'nightonly-f',name:'夜勤専従F（看護）',type:'nurse',nightOk:true,weekendOff:false,nightMax:10,dayOnly:false,nightCenter:true,nightOnly:false},
-  {id:'bait-l',name:'バイトL（看護）',type:'bait',nightOk:true,weekendOff:false,nightMax:4,dayOnly:false,nightCenter:false,nightOnly:true},
-  {id:'bait-m',name:'バイトM（看護）',type:'bait',nightOk:true,weekendOff:false,nightMax:4,dayOnly:false,nightCenter:false,nightOnly:true},
-  {id:'bait-n',name:'バイトN（看護）',type:'bait',nightOk:true,weekendOff:false,nightMax:2,dayOnly:false,nightCenter:false,nightOnly:true},
-  {id:'bait-o',name:'バイトO（看護）',type:'bait',nightOk:true,weekendOff:false,nightMax:2,dayOnly:false,nightCenter:false,nightOnly:true},
-  {id:'kanri-care',name:'管理者（介護）',type:'care',nightOk:false,weekendOff:true,nightMax:0,dayOnly:true,nightCenter:false,nightOnly:false},
-  {id:'nightonly-g',name:'夜勤専従G（介護）',type:'care',nightOk:true,weekendOff:false,nightMax:11,dayOnly:false,nightCenter:true,nightOnly:false},
-  {id:'nightonly-h',name:'夜勤専従H（介護）',type:'care',nightOk:true,weekendOff:false,nightMax:11,dayOnly:false,nightCenter:true,nightOnly:false},
-  {id:'sabikan-j',name:'サビ管J（介護）',type:'care',nightOk:true,weekendOff:false,nightMax:5,dayOnly:false,nightCenter:false,nightOnly:false},
-  {id:'k-san',name:'Kさん（介護）',type:'care',nightOk:true,weekendOff:false,nightMax:4,dayOnly:false,nightCenter:false,nightOnly:false},
+  {id:'kanri-ns',name:'管理者（看護）',type:'nurse',nightOk:false,weekendOff:true,nightMax:0,dayOnly:true,nightCenter:false,nightOnly:false,isKanri:true},
+  {id:'day-a',name:'日勤専任A（看護）',type:'nurse',nightOk:false,weekendOff:false,nightMax:0,dayOnly:true,nightCenter:false,nightOnly:false,isKanri:false},
+  {id:'day-b',name:'日勤専任B（看護）',type:'nurse',nightOk:false,weekendOff:false,nightMax:0,dayOnly:true,nightCenter:false,nightOnly:false,isKanri:false},
+  {id:'night-c',name:'夜勤多めC（看護）',type:'nurse',nightOk:true,weekendOff:false,nightMax:10,dayOnly:false,nightCenter:false,nightOnly:false,isKanri:false},
+  {id:'night-d',name:'夜勤4回D（看護）',type:'nurse',nightOk:true,weekendOff:false,nightMax:4,dayOnly:false,nightCenter:false,nightOnly:false,isKanri:false},
+  {id:'nightonly-f',name:'夜勤専従F（看護）',type:'nurse',nightOk:true,weekendOff:false,nightMax:10,dayOnly:false,nightCenter:true,nightOnly:false,isKanri:false},
+  {id:'bait-l',name:'バイトL（看護）',type:'bait',nightOk:true,weekendOff:false,nightMax:4,dayOnly:false,nightCenter:false,nightOnly:true,isKanri:false},
+  {id:'bait-m',name:'バイトM（看護）',type:'bait',nightOk:true,weekendOff:false,nightMax:4,dayOnly:false,nightCenter:false,nightOnly:true,isKanri:false},
+  {id:'bait-n',name:'バイトN（看護）',type:'bait',nightOk:true,weekendOff:false,nightMax:2,dayOnly:false,nightCenter:false,nightOnly:true,isKanri:false},
+  {id:'bait-o',name:'バイトO（看護）',type:'bait',nightOk:true,weekendOff:false,nightMax:2,dayOnly:false,nightCenter:false,nightOnly:true,isKanri:false},
+  {id:'kanri-care',name:'管理者（介護）',type:'care',nightOk:false,weekendOff:true,nightMax:0,dayOnly:true,nightCenter:false,nightOnly:false,isKanri:true},
+  {id:'nightonly-g',name:'夜勤専従G（介護）',type:'care',nightOk:true,weekendOff:false,nightMax:11,dayOnly:false,nightCenter:true,nightOnly:false,isKanri:false},
+  {id:'nightonly-h',name:'夜勤専従H（介護）',type:'care',nightOk:true,weekendOff:false,nightMax:11,dayOnly:false,nightCenter:true,nightOnly:false,isKanri:false},
+  {id:'sabikan-j',name:'サビ管J（介護）',type:'care',nightOk:true,weekendOff:false,nightMax:5,dayOnly:false,nightCenter:false,nightOnly:false,isKanri:false},
+  {id:'k-san',name:'Kさん（介護）',type:'care',nightOk:true,weekendOff:false,nightMax:4,dayOnly:false,nightCenter:false,nightOnly:false,isKanri:false},
 ];
 
 const SHIFTS=['日勤','夜勤','夜勤明け','休み','有給'];
@@ -964,7 +964,7 @@ function renderAlertsTab(y,m,data){
     if(!s.nightOk||s.nightMax===0)return;
     let cnt=0;for(let d=1;d<=days;d++){if((data[s.id]||{})[d]==='夜勤')cnt++;}
     if(cnt>s.nightMax)alerts.push({t:'ng',m:`${s.name}：夜勤超過（${cnt}/${s.nightMax}回）`});
-    const maxDayRun=(s.id==='kanri-ns'||s.id==='kanri-care')?5:4;
+    const maxDayRun=s.isKanri?5:4;  // 管理者は5日、その他4日
     let run=0,runSetsAlert=0,prevRunMax=false;
     for(let d=1;d<=days;d++){
       const sh=(data[s.id]||{})[d]||'';
@@ -1029,7 +1029,7 @@ function renderStaffMgmt(){
             <span class="tag ${cls}">${lbl}</span>
             <span style="font-size:13px;font-weight:500">${s.name}</span>
           </div>
-          <span style="font-size:10px;color:var(--txt3)">夜勤${s.nightOk?'可':'不可'}${s.nightMax>0?' 上限'+s.nightMax+'回':''}${s.weekendOff?' 土日休':''}</span>
+          <span style="font-size:10px;color:var(--txt3)">夜勤${s.nightOk?'可':'不可'}${s.nightMax>0?' 上限'+s.nightMax+'回':''}${s.weekendOff?' 土日休':''}${s.isKanri?' 管理者(5連勤可)':''}</span>
         </div>
         <div style="display:flex;gap:5px;flex-shrink:0">
           <button style="padding:5px 10px;border:1px solid var(--border);border-radius:7px;background:#fafafa;font-size:11px;cursor:pointer" onclick="openEditStaff('${s.id}')">編集</button>
@@ -1432,145 +1432,198 @@ function setATab(t){S.adminTab=t;render();}
 
 function genDraft(){
   const y=S.aYr,m=S.aMo,days=dim(y,m);
-  const data={};S.staffList.forEach(s=>{data[s.id]={};});
+  const targetOff=monthOffDays(m); // 2月=8, 他=9
+  const data={};
+  S.staffList.forEach(s=>{data[s.id]={};});
 
+  // ══════════════════════════════════════════════
+  // STEP1: 希望休・バイト夜勤希望・土日休みを確定
+  // ══════════════════════════════════════════════
   S.staffList.forEach(s=>{
     const reqs=getReqs(y,m,s.id);
     const baitData=(s.type==='bait')?(S.requests[brk(y,m,s.id)]||{}):{};
     for(let d=1;d<=days;d++){
-      const w=dow(y,m,d),wknd=w===0||w===6;
+      const w=dow(y,m,d),wknd=(w===0||w===6);
       if(s.type==='bait'){
-        // バイトは夜勤希望データを使用
-        if(baitData[d]) data[s.id][d]=baitData[d];
-        else data[s.id][d]='';
+        data[s.id][d]=baitData[d]||'';
       } else {
-        if(reqs.includes(d)) data[s.id][d]='休み';
+        if(reqs.includes(d))       data[s.id][d]='休み';
         else if(s.weekendOff&&wknd) data[s.id][d]='休み';
-        else data[s.id][d]='';
+        else                        data[s.id][d]='';
       }
     }
   });
 
+  // ══════════════════════════════════════════════
+  // STEP2: 夜勤を割り当て
+  // ══════════════════════════════════════════════
   const nNurse=S.staffList.filter(s=>s.nightOk&&(s.type==='nurse'||s.type==='bait'));
-  const nCare=S.staffList.filter(s=>s.nightOk&&s.type==='care');
+  const nCare =S.staffList.filter(s=>s.nightOk&&s.type==='care');
   const nc={};S.staffList.forEach(s=>{nc[s.id]=0;});
 
-  // 夜勤セット数カウント: data内で「夜勤→夜勤明け」の連続を数える
   function countNightSets(sid,upToDay){
     let sets=0;
-    for(let x=1;x<upToDay;x++){
+    for(let x=1;x<upToDay;x++)
       if((data[sid][x]||'')==='夜勤'&&(data[sid][x+1]||'')==='夜勤明け') sets++;
-    }
     return sets;
   }
-
+  function isGHstaff(s){return s.nightCenter&&s.type==='care';}
   function canNight(s,d){
-    if(data[s.id][d]==='休み')return false;
-    if(nc[s.id]>=s.nightMax)return false;
-    if(d>1&&data[s.id][d-1]==='夜勤')return false;
-    if(s.type==='bait'&&d<8)return false;
-    // 夜勤セット上限チェック
-    const sets=countNightSets(s.id,d);
-    const isGH=(s.id==='nightonly-g'||s.id==='nightonly-h');
-    const isNurse=(s.type==='nurse');
-    const maxSets=isGH?3:isNurse?3:2;
-    if(sets>=maxSets)return false;
-    // 夜明夜明の2セット目の後: GH以外は次の夜勤まで最低1休みが必要
-    if(!isGH&&d>=5){
-      const d4=data[s.id][d-4]||'',d3=data[s.id][d-3]||'',
-            d2=data[s.id][d-2]||'',d1=data[s.id][d-1]||'';
-      if(d4==='夜勤'&&d3==='夜勤明け'&&d2==='夜勤'&&d1==='夜勤明け')return false;
+    if(data[s.id][d]==='休み') return false;
+    if(nc[s.id]>=s.nightMax)   return false;
+    if(d>1&&data[s.id][d-1]==='夜勤') return false;
+    if(s.type==='bait'&&d<8)   return false;
+    if(countNightSets(s.id,d)>=3) return false;
+    if(!isGHstaff(s)&&d>=5){
+      const p4=data[s.id][d-4]||'',p3=data[s.id][d-3]||'',
+            p2=data[s.id][d-2]||'',p1=data[s.id][d-1]||'';
+      if(p4==='夜勤'&&p3==='夜勤明け'&&p2==='夜勤'&&p1==='夜勤明け') return false;
     }
     return true;
   }
 
   for(let d=1;d<=days;d++){
-    const cn=nNurse.filter(s=>canNight(s,d)).sort((a,b)=>(b.nightCenter?10:0)-(a.nightCenter?10:0)||(b.nightMax-nc[b.id])-(a.nightMax-nc[a.id]));
+    const cn=nNurse.filter(s=>canNight(s,d))
+      .sort((a,b)=>(b.nightCenter?10:0)-(a.nightCenter?10:0)||
+                   (b.nightMax-nc[b.id])-(a.nightMax-nc[a.id]));
     if(cn.length>0){
-      const s=cn[0];
-      data[s.id][d]='夜勤';nc[s.id]++;
-      // 夜勤の翌日は必ず明け（上書き）
-      if(d<days) data[s.id][d+1]='夜勤明け';
-      // 明けの翌々日は必ず休み
-      if(d+2<=days && !data[s.id][d+2]) data[s.id][d+2]='休み';
+      const s=cn[0]; data[s.id][d]='夜勤'; nc[s.id]++;
+      if(d<days)      data[s.id][d+1]='夜勤明け';
+      if(d+2<=days&&!data[s.id][d+2]) data[s.id][d+2]='休み';
     }
-    const cc=nCare.filter(s=>canNight(s,d)).sort((a,b)=>(b.nightCenter?10:0)-(a.nightCenter?10:0)||(b.nightMax-nc[b.id])-(a.nightMax-nc[a.id]));
+    const cc=nCare.filter(s=>canNight(s,d))
+      .sort((a,b)=>(b.nightCenter?10:0)-(a.nightCenter?10:0)||
+                   (b.nightMax-nc[b.id])-(a.nightMax-nc[a.id]));
     if(cc.length>0){
-      const s=cc[0];
-      data[s.id][d]='夜勤';nc[s.id]++;
-      if(d<days) data[s.id][d+1]='夜勤明け';
-      if(d+2<=days && !data[s.id][d+2]) data[s.id][d+2]='休み';
+      const s=cc[0]; data[s.id][d]='夜勤'; nc[s.id]++;
+      if(d<days)      data[s.id][d+1]='夜勤明け';
+      if(d+2<=days&&!data[s.id][d+2]) data[s.id][d+2]='休み';
     }
   }
+  // 夜勤→明け、明け→休み を強制（2パス）
+  for(let pass=0;pass<2;pass++){
+    S.staffList.forEach(s=>{
+      for(let d=1;d<days;d++) if(data[s.id][d]==='夜勤')    data[s.id][d+1]='夜勤明け';
+      for(let d=1;d<days;d++) if(data[s.id][d]==='夜勤明け') data[s.id][d+1]='休み';
+    });
+  }
 
-  // 全スタッフ: 夜勤明けの翌日は必ず休みに強制セット
+  // ══════════════════════════════════════════════
+  // STEP3: 日勤・休みの割り当て
+  //  ① バイト・夜勤専従: 空きを休みに
+  //  ② 一般スタッフ: 連勤・休日数ルールを守って配置
+  // ══════════════════════════════════════════════
   S.staffList.forEach(s=>{
-    for(let d=1;d<days;d++){
-      if(data[s.id][d]==='夜勤明け'){
-        if(d+1<=days) data[s.id][d+1]='休み';
+
+    // ── バイト・夜勤専従: 空きは全て休み（バイトは休み不要のため空のまま） ──
+    if(s.type==='bait'){
+      // バイトは夜勤・明け以外は空白のまま（休みを入れない）
+      return;
+    }
+    if(s.nightOnly||s.nightCenter){
+      for(let d=1;d<=days;d++) if(!data[s.id][d]) data[s.id][d]='休み';
+      return;
+    }
+
+    const maxRun=s.isKanri?5:4; // 連勤上限
+    const maxSets=2;             // 月2セットまで
+
+    // 「固定済み」判定: 夜勤・夜勤明け・有給・希望休は変更不可
+    // 空き('') だけが配置対象
+    const fixed=d=>['夜勤','夜勤明け','有給'].includes(data[s.id][d]);
+    const isOff=d=>data[s.id][d]==='休み';
+    const isDay=d=>data[s.id][d]==='日勤';
+    const isEmpty=d=>!data[s.id][d];
+
+    // 夜勤明けの翌日に確定した休みがある場合も変更不可とみなす
+    // （STEP2で '休み' を入れた箇所）
+
+    // ── フェーズ1: 空き日に日勤を仮配置 ──
+    for(let d=1;d<=days;d++) if(isEmpty(d)) data[s.id][d]='日勤';
+
+    // ── フェーズ2: 連勤上限チェック（確実に maxRun 以内に収める）──
+    // 前から走査し、maxRun を超えた日を休みにする
+    let run=0;
+    for(let d=1;d<=days;d++){
+      if(data[s.id][d]==='日勤'){ run++; if(run>maxRun){ data[s.id][d]='休み'; run=0; } }
+      else run=0;
+    }
+
+    // ── フェーズ3: 月2セット制限（maxRun連勤を2回まで） ──
+    let sets=0; run=0;
+    for(let d=1;d<=days;d++){
+      if(data[s.id][d]==='日勤'){
+        run++;
+        if(run===maxRun){ sets++; if(sets>maxSets){ data[s.id][d]='休み'; run=0; } }
+      } else { run=0; }
+    }
+
+    // ── フェーズ4: 休み数を targetOff に正確に合わせる ──
+    // 現在の休み数カウント（有給含む）
+    function offCount(){
+      let n=0;
+      for(let d=1;d<=days;d++) if(data[s.id][d]==='休み'||data[s.id][d]==='有給') n++;
+      return n;
+    }
+
+    // 休みが少ない → 日勤を休みへ変換（長い連勤の末尾から削る）
+    let guard=100;
+    while(offCount()<targetOff && guard-->0){
+      // 最長連勤ブロックの末尾を探す
+      let bestEnd=-1, bestLen=0, curRun=0;
+      for(let d=1;d<=days;d++){
+        if(data[s.id][d]==='日勤'){ curRun++; if(curRun>bestLen){bestLen=curRun;bestEnd=d;} }
+        else curRun=0;
       }
-      // 夜勤の翌日が明けになっているか確認・強制
-      if(data[s.id][d]==='夜勤'){
-        if(d+1<=days) data[s.id][d+1]='夜勤明け';
+      if(bestEnd<0) break; // 日勤なし
+      data[s.id][bestEnd]='休み';
+    }
+
+    // 休みが多い → 休みを日勤に戻す（連勤上限を守れる位置のみ）
+    guard=100;
+    while(offCount()>targetOff && guard-->0){
+      let done=false;
+      for(let d=1;d<=days;d++){
+        // 希望休・土日休み（weekendOff）は戻さない
+        if(data[s.id][d]!=='休み') continue;
+        // 夜勤明け翌日（固定休み）は戻さない
+        if(d>1&&data[s.id][d-1]==='夜勤明け') continue;
+        // 戻したときの連勤長を確認
+        let before=0; for(let x=d-1;x>=1;x--){if(data[s.id][x]==='日勤')before++;else break;}
+        let after=0;  for(let x=d+1;x<=days;x++){if(data[s.id][x]==='日勤')after++;else break;}
+        if(before+1+after<=maxRun){
+          data[s.id][d]='日勤'; done=true; break;
+        }
       }
+      if(!done) break;
+    }
+
+    // ── フェーズ5: 最終連勤チェック ──
+    run=0;
+    for(let d=1;d<=days;d++){
+      if(data[s.id][d]==='日勤'){ run++; if(run>maxRun){ data[s.id][d]='休み'; run=0; } }
+      else run=0;
     }
   });
 
-  // 勤務希望を反映（参考として尊重）
+  // ══════════════════════════════════════════════
+  // STEP4: 勤務希望を反映（競合しない場合のみ）
+  // ══════════════════════════════════════════════
   S.staffList.filter(s=>s.type!=='bait').forEach(s=>{
     const sp=getShiftPref(y,m,s.id);
-    if(sp&&sp.day>=1&&sp.day<=days){
-      const d=sp.day;
-      // 希望シフトが競合しない場合のみ反映
-      if(!data[s.id][d]||data[s.id][d]===''){
-        data[s.id][d]=sp.shift;
-        // 夜勤希望なら翌日に明けをセット
-        if(sp.shift==='夜勤'&&d<days) data[s.id][d+1]='夜勤明け';
-        if(sp.shift==='夜勤明け'&&d>1&&data[s.id][d-1]==='') data[s.id][d-1]='夜勤';
-      }
-    }
+    if(!sp||sp.day<1||sp.day>days) return;
+    const cur=data[s.id][sp.day]||'';
+    if(['夜勤','夜勤明け','有給'].includes(cur)) return;
+    data[s.id][sp.day]=sp.shift;
+    if(sp.shift==='夜勤'&&sp.day<days) data[s.id][sp.day+1]='夜勤明け';
   });
 
-  S.staffList.forEach(s=>{
-    const isKanri=(s.id==='kanri-ns'||s.id==='kanri-care');
-    const maxRun=isKanri?5:4;
-    const maxRunSets=2; // 月2セットまで（連勤リセット後も累積カウント）
-    let dayRun=0,runSets=0;
-    for(let d=1;d<=days;d++){
-      if(data[s.id][d]===''){
-        if(s.nightOnly||s.nightCenter){data[s.id][d]='休み';dayRun=0;}
-        else{
-          // 連勤セット上限チェック: 4(5)連続になる瞬間にセット数を消費
-          const willComplete=(dayRun+1>=maxRun);
-          if(willComplete&&runSets>=maxRunSets){
-            // これ以上連勤セットを使えない → 休みにして連勤リセット
-            data[s.id][d]='休み';dayRun=0;
-          } else {
-            data[s.id][d]='日勤';
-            dayRun++;
-            if(willComplete) runSets++;
-          }
-        }
-      }else if(data[s.id][d]==='日勤'){
-        dayRun++;
-        // 既に連勤が続いているとき上限超えたら次の日に休みをセット
-        if(dayRun>=maxRun){runSets++;}
-        if(dayRun>maxRun&&d<days&&!data[s.id][d+1]){data[s.id][d+1]='休み';}
-      }else{
-        dayRun=0;
-      }
-    }
-  });
-
-  for(let d=1;d<=days;d++){
-    const w=dow(y,m,d),hol=isHoliday(y,m,d);
-    const minDay=(w===3||w===6||w===0||hol)?4:5;
-    let cnt=S.staffList.filter(s=>data[s.id][d]==='日勤').length;
-    if(cnt<minDay){
-      const extra=S.staffList.filter(s=>data[s.id][d]==='休み'&&!s.nightOk&&!s.weekendOff&&!s.nightOnly);
-      for(const s of extra){if(cnt>=minDay)break;data[s.id][d]='日勤';cnt++;}
-    }
-  }
+  // ══════════════════════════════════════════════
+  // STEP5: 日勤人数不足の補填（管理者が手動修正前提）
+  //  ※ 休み数を崩さないよう補填は行わない
+  //    → 不足はアラートで通知、管理者が手動対応
+  // ══════════════════════════════════════════════
+  // （補填処理を削除。休み数の正確性を優先する）
 
   saveSch(y,m,data);
   S.adminTab=1;
@@ -1626,7 +1679,8 @@ function staffForm(s){
   <label class="chk"><input type="checkbox" id="sf-nightok"${v.nightOk?' checked':''}> 夜勤可能</label>
   <label class="chk"><input type="checkbox" id="sf-weekendoff"${v.weekendOff?' checked':''}> 土日基本休み</label>
   <label class="chk"><input type="checkbox" id="sf-nightcenter"${v.nightCenter?' checked':''}> 夜勤専従（夜勤中心）</label>
-  <label class="chk"><input type="checkbox" id="sf-nightonly"${v.nightOnly?' checked':''}> 夜勤のみ（バイト等）</label>`;
+  <label class="chk"><input type="checkbox" id="sf-nightonly"${v.nightOnly?' checked':''}> 夜勤のみ（バイト等）</label>
+  <label class="chk"><input type="checkbox" id="sf-iskanri"${v.isKanri?' checked':''}> 管理者（日勤連勤5日まで）</label>`;
 }
 
 function openAddStaff(){
@@ -1656,6 +1710,7 @@ function addStaff(){
     weekendOff:document.getElementById('sf-weekendoff').checked,
     nightCenter:document.getElementById('sf-nightcenter').checked,
     nightOnly:document.getElementById('sf-nightonly').checked,
+    isKanri:document.getElementById('sf-iskanri').checked,
     dayOnly:false,
   });
   saveStaff();closeModal();
@@ -1672,6 +1727,7 @@ function editStaff(sid){
     weekendOff:document.getElementById('sf-weekendoff').checked,
     nightCenter:document.getElementById('sf-nightcenter').checked,
     nightOnly:document.getElementById('sf-nightonly').checked,
+    isKanri:document.getElementById('sf-iskanri').checked,
   };
   saveStaff();closeModal();
 }

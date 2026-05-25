@@ -1472,29 +1472,45 @@ function genDraft(){
 
   // 各スタッフの最大セット数（夜勤上限から計算）
   function maxSets(s){
-    // nightCenter(専従)はフル活用: nightMax/2 切り上げ
-    // 一般夜勤可: 月3セットまで
-    if(s.nightCenter) return Math.ceil(s.nightMax/2);
-    return 3;
+    if(s.nightCenter){
+      // 夜勤専従: 夜+明+休=3日/セット。月の日数で可能な最大セット数
+      // 例: 30日 → 最大10セット、ただし nightMax が上限
+      const maxByDays=Math.floor(days/3);
+      return Math.min(s.nightMax, maxByDays);
+    }
+    return 3; // 一般夜勤可: 月3セットまで
   }
 
   function canNight(s,d){
-    if(!data[s.id]&&d) return false;
     if(data[s.id][d]==='休み') return false;
     if(nc[s.id]>=s.nightMax)   return false;
-    // 翌日が確定休みの場合は夜勤不可（明けを入れられない）
-    if(d<days&&data[s.id][d+1]==='休み') return false;
-    // 翌々日が確定休みの場合は夜勤不可（明け翌日の休みを入れられない）
-    if(d+2<=days&&data[s.id][d+2]==='休み') return false;
-    // 前日が夜勤なら不可
+    // 前日が夜勤なら不可（連続夜勤不可）
     if(d>1&&data[s.id][d-1]==='夜勤') return false;
+    // 翌日が夜勤明け以外の確定シフトがある場合は不可
+    if(d<days){
+      const next=data[s.id][d+1]||'';
+      if(next&&next!=='夜勤明け') return false;
+    }
     // セット上限チェック
     if(countSets(s.id,d)>=maxSets(s)) return false;
-    // 夜専従以外: 夜明夜明の後は必ず1日空ける
-    if(!s.nightCenter&&d>=5){
-      const p4=data[s.id][d-4]||'',p3=data[s.id][d-3]||'',
-            p2=data[s.id][d-2]||'',p1=data[s.id][d-1]||'';
-      if(p4==='夜勤'&&p3==='夜勤明け'&&p2==='夜勤'&&p1==='夜勤明け') return false;
+    // 連続夜勤セット制限
+    if(s.nightCenter){
+      // 夜勤専従: 夜明夜明夜明（3連続）まで許可、4連続は不可
+      if(d>=7){
+        const p6=data[s.id][d-6]||'',p5=data[s.id][d-5]||'',
+              p4=data[s.id][d-4]||'',p3=data[s.id][d-3]||'',
+              p2=data[s.id][d-2]||'',p1=data[s.id][d-1]||'';
+        // 直前が夜明夜明夜明 なら4連続目は不可
+        if(p6==='夜勤'&&p5==='夜勤明け'&&p4==='夜勤'&&p3==='夜勤明け'
+          &&p2==='夜勤'&&p1==='夜勤明け') return false;
+      }
+    } else {
+      // 一般夜勤可: 夜明夜明の後は必ず1日空ける
+      if(d>=5){
+        const p4=data[s.id][d-4]||'',p3=data[s.id][d-3]||'',
+              p2=data[s.id][d-2]||'',p1=data[s.id][d-1]||'';
+        if(p4==='夜勤'&&p3==='夜勤明け'&&p2==='夜勤'&&p1==='夜勤明け') return false;
+      }
     }
     return true;
   }
@@ -1528,17 +1544,20 @@ function genDraft(){
         return bLast-aLast;
       });
 
-      // 残り日数と残り必要夜勤数を考慮して、必要なら強制配置
       const s=available[0];
       const remaining=days-d+1;
       const needed=s.nightMax-nc[s.id];
-      // 残り日数 <= 残り必要夜勤数×2 なら強制配置（後半に残さないため）
-      const mustAssign=needed>0&&remaining<=needed*2;
+      // nightCenter(夜勤専従)は可能な限り毎回配置
+      // 一般: 残り日数が残り必要夜勤×3以下になったら強制
+      const mustAssign=s.nightCenter
+        ? needed>0
+        : (needed>0&&remaining<=needed*3);
 
-      if(mustAssign||needed>0){
+      if(mustAssign){
         data[s.id][d]='夜勤'; nc[s.id]++;
         if(d<days)      data[s.id][d+1]='夜勤明け';
-        if(d+2<=days&&!data[s.id][d+2]) data[s.id][d+2]='休み';
+        if(d+2<=days&&(!data[s.id][d+2]||data[s.id][d+2]===''))
+          data[s.id][d+2]='休み';
         return true;
       }
     }
@@ -1563,7 +1582,8 @@ function genDraft(){
   // ══════════════════════════════════════════════
   S.staffList.forEach(s=>{
     if(s.type==='bait') return;        // バイトは空欄のまま
-    if(s.nightOnly||s.nightCenter){    // 夜勤専従: 空きは全て休み
+    if(s.nightOnly||s.nightCenter){
+      // 夜勤専従・nightOnly: 空きは全て休み（休日数制限なし）
       for(let d=1;d<=days;d++) if(!data[s.id][d]) data[s.id][d]='休み';
       return;
     }

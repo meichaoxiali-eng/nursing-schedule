@@ -240,7 +240,38 @@ let S={
   requests:{}, schedules:{}, staffList:[...DEFAULT_STAFF],
   welfareReqs:{}, adminTab:0,
   syncOk:false,
+  // 年休残数: {staffId: 残日数}
+  nenkyuBalance:{},
+  // 希望種別: {req:YYYY-MM:staffId} -> {day: 'off'|'nenkyuu'}
+  reqTypes:{},
+  // 勤務希望: {shiftpref:YYYY-MM:staffId} -> {day:day, shift:shift}
+  shiftPrefs:{},
 };
+
+// 月の所定休日数（2月=8、それ以外=9）
+function monthOffDays(m){ return m===1?8:9; }
+// 勤務希望キー
+function spk(y,m,sid){ return 'shiftpref:'+ym(y,m)+':'+sid; }
+function getShiftPref(y,m,sid){ return S.shiftPrefs[spk(y,m,sid)]||null; }
+function saveShiftPref(y,m,sid,data){
+  const k=spk(y,m,sid);
+  S.shiftPrefs[k]=data;
+  if(data===null){ localStorage.removeItem(k); delete S.shiftPrefs[k]; }
+  else lsSet(k,data);
+  broadcastUpdate(k,data);
+}
+// 年休キー
+function nk(sid){ return 'nenkyu:'+sid; }
+// 希望種別キー
+function rtk(y,m,sid){ return 'rtype:'+ym(y,m)+':'+sid; }
+function getReqTypes(y,m,sid){ return S.reqTypes[rtk(y,m,sid)]||{}; }
+function saveReqTypes(y,m,sid,data){
+  const k=rtk(y,m,sid); S.reqTypes[k]=data; lsSet(k,data); broadcastUpdate(k,data);
+}
+function getNenkyuBalance(sid){ return S.nenkyuBalance[sid]!==undefined ? S.nenkyuBalance[sid] : 0; }
+function saveNenkyuBalance(sid,val){
+  S.nenkyuBalance[sid]=val; lsSet(nk(sid),val); broadcastUpdate(nk(sid),val);
+}
 
 // ============================================================
 //  ストレージ（localStorage + 簡易クラウド同期）
@@ -298,9 +329,12 @@ function broadcastUpdate(key,val){
 }
 function applyRemoteUpdate(key,val){
   if(key==='staffList') S.staffList=val;
-  else if(key.startsWith('req:')) S.requests[key]=val;
+  else if(key.startsWith('req:')||key.startsWith('baitreq:')) S.requests[key]=val;
   else if(key.startsWith('sch:')) S.schedules[key]=val;
   else if(key.startsWith('wlf:')) S.welfareReqs[key]=val;
+  else if(key.startsWith('nenkyu:')) S.nenkyuBalance[key.replace('nenkyu:','')]=val;
+  else if(key.startsWith('rtype:')) S.reqTypes[key]=val;
+  else if(key.startsWith('shiftpref:')) S.shiftPrefs[key]=val;
   render();
 }
 
@@ -315,9 +349,12 @@ function loadAll(){
     if(!k)continue;
     const v=lsGet(k);
     if(v===null)continue;
-    if(k.startsWith('req:')) S.requests[k]=v;
+    if(k.startsWith('req:')||k.startsWith('baitreq:')) S.requests[k]=v;
     else if(k.startsWith('sch:')) S.schedules[k]=v;
     else if(k.startsWith('wlf:')) S.welfareReqs[k]=v;
+    else if(k.startsWith('nenkyu:')) S.nenkyuBalance[k.replace('nenkyu:','')]=v;
+    else if(k.startsWith('rtype:')) S.reqTypes[k]=v;
+    else if(k.startsWith('shiftpref:')) S.shiftPrefs[k]=v;
   }
   setSyncStatus(true,'データ読み込み完了');
   render();
@@ -381,7 +418,7 @@ function renderStaff(){
     h+=`<div class="card">
       <div class="card-t"><span class="tag ${typeCls}">${typeLbl}</span>&nbsp;${staff.name}</div>`;
 
-    if(staff.type==='bait') h+=`<div class="wb">⚠️ バイトの希望は2週目以降に管理者が手動で入力します。</div>`;
+    if(staff.type==='bait') h+=`<div class="ib">🌙 カレンダーをタップして夜勤・夜勤明けの希望を入力できます（2週目以降）。</div>`;
     if(staff.weekendOff) h+=`<div class="ib">🏠 土日は基本的に休みです</div>`;
 
     const sorted=[...reqs].sort((a,b)=>a-b);
@@ -420,20 +457,96 @@ function renderStaff(){
       if(isReq)cls+=' req';
       if(isPast)cls+=' dis';
       if(isTod)cls+=' tod';
-      const canClick=!isPast&&inPeriod&&staff.type!=='bait';
       const dnCls=w===6?'dn sat-n':(w===0||hol)?'dn sun-n':'dn';
-      h+=`<div class="${cls}" ${canClick?`onclick="togReq(${d})"`:''} style="touch-action:manipulation">
-        <span class="${dnCls}">${d}</span>
-        ${hol?'<span class="hol-mark">祝</span>':''}
-        ${isReq?'<span class="dm">希望休</span>':''}
-      </div>`;
+      if(staff.type==='bait'){
+        // バイト: 夜勤・夜勤明けの希望入力（2週目以降）
+        const baitReq=getBaitReq(y,m,sid,d);
+        const canBait=!isPast&&inPeriod&&d>=8;
+        let baitBg='',baitLabel='',baitBorder='1.5px solid transparent';
+        if(baitReq==='夜勤'){baitBg='background:#3C3489';baitLabel='<span style="font-size:8px;color:#EEEDFE;font-weight:700;margin-top:1px">夜</span>';baitBorder='1.5px solid #3C3489';}
+        else if(baitReq==='夜勤明け'){baitBg='background:#EF9F27';baitLabel='<span style="font-size:8px;color:#412402;font-weight:700;margin-top:1px">明</span>';baitBorder='1.5px solid #EF9F27';}
+        const baitDis=!canBait?'opacity:.4;pointer-events:none':'';
+        h+=`<div class="${cls.replace(' req','')}" onclick="${canBait?`openBaitModal(${d})`:''}" style="touch-action:manipulation;${baitBg};border:${baitBorder};${baitDis}">
+          <span class="${dnCls}" style="${baitReq?'color:#fff':''}">${d}</span>
+          ${hol&&!baitReq?'<span class="hol-mark">祝</span>':''}
+          ${baitLabel}
+        </div>`;
+      } else {
+        const canClick=!isPast&&inPeriod;
+        const rtype=getReqTypes(y,m,sid)[d]||'off';
+        const reqLabel=isReq?(rtype==='nenkyuu'?'年休':'週休'):'';
+        const reqColor=isReq?(rtype==='nenkyuu'?'color:#27500A':''):'';
+        h+=`<div class="${cls}" ${canClick?`onclick="openReqTypeModal(${d})"`:''} style="touch-action:manipulation">
+          <span class="${dnCls}">${d}</span>
+          ${hol?'<span class="hol-mark">祝</span>':''}
+          ${isReq?`<span class="dm" style="${reqColor}">${reqLabel}</span>`:''}
+        </div>`;
+      }
     }
     h+=`</div>`;
-    h+=`<div style="margin-top:10px;display:flex;align-items:center;justify-content:space-between;padding:8px;background:#fafafa;border-radius:8px">
-      <span style="font-size:12px;color:var(--txt2)">希望休：<strong style="color:var(--am-dk);font-size:14px">${reqs.length}</strong>／${MAX_REQ}回</span>
-      <span style="font-size:10px;color:var(--txt3)">🟨 = 希望休</span>
+    if(staff.type==='bait'){
+      const baitData=S.requests[brk(y,m,sid)]||{};
+      const bNight=Object.values(baitData).filter(v=>v==='夜勤').length;
+      const bAke=Object.values(baitData).filter(v=>v==='夜勤明け').length;
+      h+=`<div style="margin-top:10px;padding:10px 12px;background:#fafafa;border-radius:8px">
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <span style="font-size:12px;background:#3C3489;color:#EEEDFE;padding:3px 10px;border-radius:10px">🌙 夜勤 ${bNight}回（上限 ${staff.nightMax}回）</span>
+          <span style="font-size:12px;background:#EF9F27;color:#2d1c00;padding:3px 10px;border-radius:10px">🌅 明け ${bAke}回</span>
+        </div>
+        <div style="font-size:10px;color:#999;margin-top:5px">日付をタップして夜勤希望を登録・解除できます（8日以降）</div>
+      </div>`;
+      h+=`</div>`;
+    } else {
+    const rtypes=getReqTypes(y,m,sid);
+    const nenkyuUsed=reqs.filter(d=>rtypes[d]==='nenkyuu').length;
+    const offUsed=reqs.length-nenkyuUsed;
+    const maxOff=monthOffDays(m);
+    const nenkyuBal=getNenkyuBalance(sid);
+    h+=`<div style="margin-top:10px;padding:10px 12px;background:#fafafa;border-radius:8px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <span style="font-size:12px;color:var(--txt2)">月の希望休（週休）：<strong style="color:var(--am-dk)">${offUsed}</strong>／${maxOff}日</span>
+        <span style="font-size:10px;color:var(--txt3)">🟨=週休希望</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <span style="font-size:12px;color:var(--txt2)">年休使用：<strong style="color:var(--gr-dk)">${nenkyuUsed}</strong>日　残：<strong style="color:var(--gr-dk)">${nenkyuBal}</strong>日</span>
+        <span style="font-size:10px;color:var(--txt3)">🟩=年休</span>
+      </div>
     </div>`;
     h+=`</div>`;
+    } // end bait else
+
+    // 勤務希望入力
+    if(staff.type!=='bait'){
+      const sp=getShiftPref(y,m,sid);
+      const shiftLabels={'日勤':'🌤 日勤','夜勤':'🌙 夜勤','夜勤明け':'🌅 夜勤明け'};
+      h+=`<div class="card" style="margin-top:8px;border:1.5px solid #B5D4F4">
+        <div class="card-t" style="color:#0C447C">📝 勤務希望（任意・月1回まで）</div>
+        <div style="background:#FFF8E1;border-left:3px solid #EF9F27;border-radius:6px;padding:8px 10px;font-size:11px;color:#633806;margin-bottom:10px;line-height:1.6">
+          ⚠️ 勤務希望は必ず通るとは限りません。参考として管理者に伝わります。
+        </div>
+        ${sp
+          ?`<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 10px;background:#E6F1FB;border-radius:8px">
+              <span style="font-size:13px;font-weight:600;color:#0C447C">${m+1}月${sp.day}日 ${shiftLabels[sp.shift]||sp.shift}</span>
+              <button onclick="clearShiftPref()" style="padding:4px 10px;border:1px solid #F7C1C1;border-radius:6px;background:#fff;color:#A32D2D;font-size:11px;cursor:pointer">解除</button>
+            </div>`
+          :inPeriod
+            ?`<div style="display:flex;gap:6px">
+                <select id="sp-day" style="flex:1;padding:8px;border:1px solid var(--border);border-radius:8px;background:#fafafa;font-size:13px">
+                  <option value="">日付を選択</option>
+                  ${Array.from({length:dim(y,m)},(_,i)=>i+1).map(d=>`<option value="${d}">${d}日</option>`).join('')}
+                </select>
+                <select id="sp-shift" style="flex:1;padding:8px;border:1px solid var(--border);border-radius:8px;background:#fafafa;font-size:13px">
+                  <option value="">シフトを選択</option>
+                  <option value="日勤">🌤 日勤</option>
+                  <option value="夜勤">🌙 夜勤</option>
+                  <option value="夜勤明け">🌅 夜勤明け</option>
+                </select>
+              </div>
+              <button onclick="submitShiftPref()" style="width:100%;margin-top:8px;padding:9px;background:#185FA5;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">希望を登録する</button>`
+            :`<div style="text-align:center;font-size:12px;color:#999;padding:10px">入力期間（${INPUT_START}〜${INPUT_END}日）に登録できます</div>`
+        }
+      </div>`;
+    }
 
     // 福利厚生
     h+=`<div class="welfare-box">
@@ -450,27 +563,165 @@ function renderStaff(){
 function selStaff(sid){S.selStaff=sid;render();}
 function chgMo(d){S.mo+=d;if(S.mo>11){S.mo=0;S.yr++;}if(S.mo<0){S.mo=11;S.yr--;}render();}
 
-function togReq(day){
+function openReqTypeModal(day){
   const sid=S.selStaff;if(!sid)return;
   const y=S.yr,m=S.mo;
   const staff=S.staffList.find(s=>s.id===sid);
   if(staff&&staff.type==='bait'){showFlash('バイトの希望は管理者が入力します','wb');return;}
-  let reqs=[...getReqs(y,m,sid)];
+  const reqs=getReqs(y,m,sid);
+  // すでに登録済み → 解除
   if(reqs.includes(day)){
-    reqs=reqs.filter(d=>d!==day);
-    saveReqs(y,m,sid,reqs);render();return;
+    const rtypes=getReqTypes(y,m,sid);
+    // 年休だった場合は残数を戻す
+    if(rtypes[day]==='nenkyuu'){
+      saveNenkyuBalance(sid, getNenkyuBalance(sid)+1);
+    }
+    const newReqs=reqs.filter(d=>d!==day);
+    const newTypes={...rtypes};delete newTypes[day];
+    saveReqs(y,m,sid,newReqs);
+    saveReqTypes(y,m,sid,newTypes);
+    setSyncStatus(true,'解除しました');render();return;
   }
-  if(reqs.length>=MAX_REQ){showFlash(`希望休は月${MAX_REQ}回までです`,'ab');return;}
+  // 重複チェック
   const others=S.staffList.filter(s=>s.id!==sid);
   const sameDay=others.filter(s=>getReqs(y,m,s.id).includes(day));
   if(sameDay.length>=2){
     showFlash(sameDay.slice(0,2).map(s=>s.name).join('・')+'と重複しています。\n必要であれば交渉してください。','ab');
     return;
   }
+  const maxOff=monthOffDays(m);
+  const rtypes=getReqTypes(y,m,sid);
+  const nenkyuUsed=reqs.filter(d=>rtypes[d]==='nenkyuu').length;
+  const offUsed=reqs.length-nenkyuUsed;
+  const nenkyuBal=getNenkyuBalance(sid);
+  // 週休上限チェック（年休は週休カウントに含めない）
+  const canOff=offUsed<maxOff;
+  const canNen=nenkyuBal>0;
+  if(!canOff&&!canNen){
+    showFlash(`週休(${maxOff}日)も年休残数(${nenkyuBal}日)も上限に達しています`,'ab');return;
+  }
+  // 種別選択モーダル表示
+  const d2=`${m+1}月${day}日`;
+  document.getElementById('modal-area').innerHTML=`
+  <div style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:500;display:flex;align-items:center;justify-content:center;padding:16px" onclick="closeReqModal()">
+    <div style="background:#fff;border-radius:16px;padding:20px 18px;width:100%;max-width:360px" onclick="event.stopPropagation()">
+      <div style="font-size:15px;font-weight:600;margin-bottom:6px">${d2} の休暇種別</div>
+      <div style="font-size:12px;color:#666;margin-bottom:16px">どちらの休暇を使用しますか？</div>
+      ${canOff?`<button onclick="confirmReq(${day},'off')" style="display:block;width:100%;padding:12px;background:#FAEEDA;color:#633806;border:1.5px solid #854F0B;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;margin-bottom:10px">
+        🟨 週休（月の所定休日）<br><span style="font-size:11px;font-weight:400">残り ${maxOff-offUsed}日</span>
+      </button>`:`<div style="padding:12px;background:#f5f5f5;border-radius:10px;font-size:13px;color:#999;text-align:center;margin-bottom:10px">週休は今月上限（${maxOff}日）に達しています</div>`}
+      ${canNen?`<button onclick="confirmReq(${day},'nenkyuu')" style="display:block;width:100%;padding:12px;background:#EAF3DE;color:#27500A;border:1.5px solid #3B6D11;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;margin-bottom:10px">
+        🟩 年次有給休暇<br><span style="font-size:11px;font-weight:400">残り ${nenkyuBal}日</span>
+      </button>`:`<div style="padding:12px;background:#f5f5f5;border-radius:10px;font-size:13px;color:#999;text-align:center;margin-bottom:10px">年休残数が0日です</div>`}
+      <button onclick="closeReqModal()" style="display:block;width:100%;padding:10px;background:#f5f5f5;color:#666;border:none;border-radius:10px;font-size:13px;cursor:pointer">キャンセル</button>
+    </div>
+  </div>`;
+}
+
+function confirmReq(day,type){
+  const sid=S.selStaff;if(!sid)return;
+  const y=S.yr,m=S.mo;
+  let reqs=[...getReqs(y,m,sid)];
+  const rtypes={...getReqTypes(y,m,sid)};
   reqs.push(day);reqs.sort((a,b)=>a-b);
+  rtypes[day]=type;
+  if(type==='nenkyuu'){
+    saveNenkyuBalance(sid, getNenkyuBalance(sid)-1);
+  }
   saveReqs(y,m,sid,reqs);
+  saveReqTypes(y,m,sid,rtypes);
   setSyncStatus(true,'保存しました - '+new Date().toLocaleTimeString('ja-JP'));
+  closeReqModal();
+}
+
+function closeReqModal(){
+  document.getElementById('modal-area').innerHTML='';render();
+}
+
+function submitShiftPref(){
+  const sid=S.selStaff;if(!sid)return;
+  const y=S.yr,m=S.mo;
+  const dayEl=document.getElementById('sp-day');
+  const shiftEl=document.getElementById('sp-shift');
+  const day=parseInt(dayEl?.value||'0');
+  const shift=shiftEl?.value||'';
+  if(!day||!shift){showFlash('日付とシフトを両方選択してください','wb');return;}
+  saveShiftPref(y,m,sid,{day,shift});
+  showFlash('勤務希望を登録しました（必ず通るとは限りません）','ib');
   render();
+}
+
+function clearShiftPref(){
+  const sid=S.selStaff;if(!sid)return;
+  const y=S.yr,m=S.mo;
+  saveShiftPref(y,m,sid,null);
+  render();
+}
+
+// ============================================================
+//  バイト 夜勤希望入力
+// ============================================================
+function brk(y,m,sid){return 'baitreq:'+ym(y,m)+':'+sid;}
+function getBaitReq(y,m,sid,d){
+  const k=brk(y,m,sid);
+  const data=S.requests[k]||{};
+  return data[d]||'';
+}
+function saveBaitReqs(y,m,sid,data){
+  const k=brk(y,m,sid);
+  S.requests[k]=data;
+  lsSet(k,data);
+  broadcastUpdate(k,data);
+}
+
+function openBaitModal(day){
+  const sid=S.selStaff;if(!sid)return;
+  const y=S.yr,m=S.mo;
+  const staff=S.staffList.find(s=>s.id===sid);
+  const baitData={...(S.requests[brk(y,m,sid)]||{})};
+  const cur=baitData[day]||'';
+  // すでに登録済み → 解除
+  if(cur){
+    delete baitData[day];
+    saveBaitReqs(y,m,sid,baitData);
+    render();return;
+  }
+  // 夜勤の上限チェック
+  const nightCount=Object.values(baitData).filter(v=>v==='夜勤').length;
+  const aketCount=Object.values(baitData).filter(v=>v==='夜勤明け').length;
+  document.getElementById('modal-area').innerHTML=`
+  <div style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:500;display:flex;align-items:center;justify-content:center;padding:16px" onclick="closeReqModal()">
+    <div style="background:#fff;border-radius:16px;padding:20px 18px;width:100%;max-width:340px" onclick="event.stopPropagation()">
+      <div style="font-size:15px;font-weight:600;margin-bottom:4px">${m+1}月${day}日</div>
+      <div style="font-size:12px;color:#666;margin-bottom:14px">希望シフトを選択してください</div>
+      <button onclick="confirmBaitReq(${day},'夜勤')" style="display:block;width:100%;padding:13px;background:#3C3489;color:#EEEDFE;border:none;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer;margin-bottom:10px">
+        🌙 夜勤<br><span style="font-size:11px;font-weight:400;opacity:.8">今月 ${nightCount}回登録済み（上限 ${staff.nightMax}回）</span>
+      </button>
+      <button onclick="confirmBaitReq(${day},'夜勤明け')" style="display:block;width:100%;padding:13px;background:#EF9F27;color:#2d1c00;border:none;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer;margin-bottom:10px">
+        🌅 夜勤明け<br><span style="font-size:11px;font-weight:400;opacity:.7">今月 ${aketCount}回登録済み</span>
+      </button>
+      <button onclick="closeReqModal()" style="display:block;width:100%;padding:10px;background:#f5f5f5;color:#666;border:none;border-radius:10px;font-size:13px;cursor:pointer">キャンセル</button>
+    </div>
+  </div>`;
+}
+
+function confirmBaitReq(day,shift){
+  const sid=S.selStaff;if(!sid)return;
+  const y=S.yr,m=S.mo;
+  const staff=S.staffList.find(s=>s.id===sid);
+  const baitData={...(S.requests[brk(y,m,sid)]||{})};
+  // 夜勤上限チェック
+  if(shift==='夜勤'){
+    const nightCount=Object.values(baitData).filter(v=>v==='夜勤').length;
+    if(nightCount>=staff.nightMax){
+      showFlash(`夜勤は月${staff.nightMax}回までです`,'ab');
+      closeReqModal();return;
+    }
+  }
+  baitData[day]=shift;
+  saveBaitReqs(y,m,sid,baitData);
+  setSyncStatus(true,'保存しました');
+  closeReqModal();
 }
 
 function showFlash(msg,cls='ab'){
@@ -502,7 +753,7 @@ function renderAdmin(){
   }
   const y=S.aYr,m=S.aMo;
   const schData=S.schedules[sk(y,m)]||null;
-  const tabs=['希望一覧','勤務表','充足','アラート','スタッフ管理','福利厚生','データ'];
+  const tabs=['希望一覧','勤務表','充足','アラート','スタッフ管理','年休管理','福利厚生','データ'];
   let h=`<div class="sec">
   <div class="card" style="padding:10px 14px">
     <div class="mn" style="margin-bottom:0">
@@ -518,8 +769,9 @@ function renderAdmin(){
   else if(S.adminTab===2)h+=renderCheckTab(y,m,schData);
   else if(S.adminTab===3)h+=renderAlertsTab(y,m,schData);
   else if(S.adminTab===4)h+=renderStaffMgmt();
-  else if(S.adminTab===5)h+=renderWelfare(y,m);
-  else if(S.adminTab===6)h+=renderDataMgmt();
+  else if(S.adminTab===5)h+=renderNenkyuMgmt();
+  else if(S.adminTab===6)h+=renderWelfare(y,m);
+  else if(S.adminTab===7)h+=renderDataMgmt();
 
   h+=`</div>`;
   el.innerHTML=h;
@@ -535,21 +787,54 @@ function renderReqList(y,m){
     h+=`<div style="font-size:11px;font-weight:700;color:var(--txt2);margin:10px 0 5px;padding-bottom:4px;border-bottom:2px solid var(--border)">${lbl}</div>`;
     S.staffList.filter(s=>s.type===type).forEach(s=>{
       const reqs=getReqs(y,m,s.id);
-      h+=`<div class="staff-item" style="flex-wrap:wrap;gap:4px">
-        <div style="display:flex;align-items:center;gap:6px;width:100%;justify-content:space-between">
-          <span style="font-size:12px;font-weight:500">${s.name}</span>
-          <button onclick="openReqEdit('${s.id}')" style="padding:4px 10px;border:1px solid var(--border);border-radius:7px;background:#fafafa;font-size:11px;cursor:pointer;flex-shrink:0">✏️ 編集</button>
-        </div>
-        <div style="display:flex;gap:3px;flex-wrap:wrap;width:100%;margin-top:2px">
-          ${reqs.length===0
-            ?'<span style="color:var(--txt3);font-size:11px">希望休なし</span>'
-            :reqs.map(d=>`<span class="req-dot" title="${d}日">${d}</span>`).join('')}
-        </div>
-      </div>`;
+      if(s.type==='bait'){
+        const baitData=S.requests[brk(y,m,s.id)]||{};
+        const nights=Object.entries(baitData).filter(([,v])=>v==='夜勤').map(([d])=>Number(d)).sort((a,b)=>a-b);
+        const akes=Object.entries(baitData).filter(([,v])=>v==='夜勤明け').map(([d])=>Number(d)).sort((a,b)=>a-b);
+        h+=`<div class="staff-item" style="flex-wrap:wrap;gap:4px">
+          <div style="display:flex;align-items:center;gap:6px;width:100%;justify-content:space-between">
+            <span style="font-size:12px;font-weight:500">${s.name}</span>
+            <button onclick="openReqEdit('${s.id}')" style="padding:4px 10px;border:1px solid var(--border);border-radius:7px;background:#fafafa;font-size:11px;cursor:pointer;flex-shrink:0">✏️ 編集</button>
+          </div>
+          <div style="display:flex;gap:3px;flex-wrap:wrap;width:100%;margin-top:2px">
+            ${nights.length===0&&akes.length===0?'<span style="color:var(--txt3);font-size:11px">希望なし</span>':''}
+            ${nights.map(d=>`<span style="background:#3C3489;color:#EEEDFE;border-radius:4px;padding:1px 5px;font-size:10px;font-weight:600">${d}夜</span>`).join('')}
+            ${akes.map(d=>`<span style="background:#EF9F27;color:#2d1c00;border-radius:4px;padding:1px 5px;font-size:10px;font-weight:600">${d}明</span>`).join('')}
+          </div>
+        </div>`;
+      } else {
+        const rtypes2=getReqTypes(y,m,s.id);
+        h+=`<div class="staff-item" style="flex-wrap:wrap;gap:4px">
+          <div style="display:flex;align-items:center;gap:6px;width:100%;justify-content:space-between">
+            <span style="font-size:12px;font-weight:500">${s.name}</span>
+            <button onclick="openReqEdit('${s.id}')" style="padding:4px 10px;border:1px solid var(--border);border-radius:7px;background:#fafafa;font-size:11px;cursor:pointer;flex-shrink:0">✏️ 編集</button>
+          </div>
+          <div style="display:flex;gap:3px;flex-wrap:wrap;width:100%;margin-top:2px">
+            ${reqs.length===0
+              ?'<span style="color:var(--txt3);font-size:11px">希望休なし</span>'
+              :reqs.map(d=>{const t=rtypes2[d]||'off';return `<span class="req-dot" style="${t==='nenkyuu'?'background:#EAF3DE;color:#27500A':''}" title="${d}日(${t==='nenkyuu'?'年休':'週休'})">${d}</span>`;}).join('')}
+          </div>
+        </div>`;
+      }
     });
   });
-  h+=`</div>
-  <button class="bp" onclick="genDraft()">🗓 ドラフト勤務表を自動生成</button>`;
+  h+=`</div>`;
+  // 勤務希望一覧
+  const shiftPrefStaffs=S.staffList.filter(s=>s.type!=='bait'&&getShiftPref(y,m,s.id));
+  if(shiftPrefStaffs.length>0){
+    h+=`<div class="card"><div class="card-t" style="color:#0C447C">📝 勤務希望一覧</div>
+      <div class="ib" style="margin-bottom:8px">⚠️ 勤務希望は参考情報です。必ず通るとは限りません。</div>`;
+    shiftPrefStaffs.forEach(s=>{
+      const sp=getShiftPref(y,m,s.id);
+      const shiftBadge=sp.shift==='日勤'?'🌤 日勤':sp.shift==='夜勤'?'🌙 夜勤':'🌅 夜勤明け';
+      h+=`<div class="staff-item">
+        <span style="font-size:12px">${s.name}</span>
+        <span style="font-size:12px;font-weight:600;color:#185FA5">${m+1}月${sp.day}日 ${shiftBadge}</span>
+      </div>`;
+    });
+    h+=`</div>`;
+  }
+  h+=`<button class="bp" onclick="genDraft()">🗓 ドラフト勤務表を自動生成</button>`;
   return h;
 }
 
@@ -680,14 +965,33 @@ function renderAlertsTab(y,m,data){
     let cnt=0;for(let d=1;d<=days;d++){if((data[s.id]||{})[d]==='夜勤')cnt++;}
     if(cnt>s.nightMax)alerts.push({t:'ng',m:`${s.name}：夜勤超過（${cnt}/${s.nightMax}回）`});
     const maxDayRun=(s.id==='kanri-ns'||s.id==='kanri-care')?5:4;
-    let run=0;
+    let run=0,runSetsAlert=0,prevRunMax=false;
     for(let d=1;d<=days;d++){
       const sh=(data[s.id]||{})[d]||'';
-      if(sh==='日勤'){run++;if(run>maxDayRun)alerts.push({t:'wb',m:`${s.name}：日勤連勤超過（${d}日付近）`});}
-      else run=0;
+      if(sh==='日勤'){
+        run++;
+        if(run>maxDayRun) alerts.push({t:'wb',m:`${s.name}：日勤連勤超過（${d}日付近）`});
+        if(run>=maxDayRun&&!prevRunMax){runSetsAlert++;prevRunMax=true;}
+      } else {
+        if(prevRunMax&&run<maxDayRun) prevRunMax=false;
+        else if(run>0) prevRunMax=false;
+        run=0;
+      }
     }
+    if(runSetsAlert>2) alerts.push({t:'wb',m:`${s.name}：日勤${maxDayRun}連勤が月${runSetsAlert}セット（上限2セット）`});
+    // 夜勤セット数チェック
+    let nightSets=0;
+    for(let d=1;d<days;d++){
+      const sh=(data[s.id]||{})[d]||'',shn=(data[s.id]||{})[d+1]||'';
+      if(sh==='夜勤'&&shn==='夜勤明け') nightSets++;
+    }
+    const isGH2=(s.id==='nightonly-g'||s.id==='nightonly-h');
+    const maxNightSets=isGH2?3:(s.type==='nurse'?3:2);
+    if(nightSets>maxNightSets) alerts.push({t:'wb',m:`${s.name}：夜勤セット超過（${nightSets}セット / 上限${maxNightSets}セット）`});
     for(let d=2;d<=days;d++){
       const prev=(data[s.id]||{})[d-1]||'',cur=(data[s.id]||{})[d]||'';
+      if(prev==='夜勤'&&cur!=='夜勤明け'&&cur!=='')
+        alerts.push({t:'ng',m:`${s.name}：${m+1}/${d} 夜勤の翌日が夜勤明けになっていません`});
       if(prev==='夜勤明け'&&cur!=='休み'&&cur!=='')
         alerts.push({t:'wb',m:`${s.name}：${m+1}/${d} 夜勤明け翌日が休みになっていません`});
     }
@@ -696,6 +1000,14 @@ function renderAlertsTab(y,m,data){
     const wf=getWelfare(y,m,s.id);
     if(wf.refresh&&wf.refresh.length>0)alerts.push({t:'ib',m:`${s.name}：🌿リフレッシュ休暇申請（${wf.refresh.join(',')}日）`});
     if(wf.birthday&&wf.birthday.length>0)alerts.push({t:'ib',m:`${s.name}：🎂バースデー休暇申請（${wf.birthday.join(',')}日）`});
+  });
+  // 週休超過チェック
+  S.staffList.filter(s=>s.type!=='bait').forEach(s=>{
+    const reqs2=getReqs(y,m,s.id);
+    const rtypes2=getReqTypes(y,m,s.id);
+    const offUsed2=reqs2.filter(d=>!rtypes2[d]||rtypes2[d]==='off').length;
+    const maxOff2=monthOffDays(m);
+    if(offUsed2>maxOff2) alerts.push({t:'wb',m:`${s.name}：週休超過（${offUsed2}/${maxOff2}日）`});
   });
   let h=`<div class="card"><div class="card-t">アラート一覧 ${alerts.length>0?`<span style="color:var(--rd)">(${alerts.length}件)</span>`:''}</div>`;
   if(alerts.length===0)h+=`<div class="gb">問題は見つかりませんでした ✓</div>`;
@@ -727,6 +1039,68 @@ function renderStaffMgmt(){
     });
   });
   h+=`</div>`;return h;
+}
+
+function renderNenkyuMgmt(){
+  let h=`<div class="card">
+    <div class="card-t">📋 年休残数管理</div>
+    <div class="ib" style="margin-bottom:10px">各スタッフの年休残日数を設定します。スタッフが年休を使用すると自動的に残数が減ります。</div>`;
+  S.staffList.forEach(s=>{
+    if(s.type==='bait')return;
+    const bal=getNenkyuBalance(s.id);
+    const typeCls=s.type==='nurse'?'ns':'cs';
+    const typeLbl=s.type==='nurse'?'看護師':'介護士';
+    h+=`<div class="staff-item" style="flex-wrap:wrap;gap:6px">
+      <div style="display:flex;align-items:center;gap:6px;flex:1">
+        <span class="tag ${typeCls}" style="display:inline-block;padding:1px 7px;border-radius:20px;font-size:10px;font-weight:600">${typeLbl}</span>
+        <span style="font-size:13px;font-weight:500">${s.name}</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <button onclick="adjNenkyu('${s.id}',-1)" style="width:28px;height:28px;border:1px solid var(--border);border-radius:6px;background:#fafafa;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center">−</button>
+        <span style="font-size:16px;font-weight:600;color:var(--gr-dk);min-width:36px;text-align:center">${bal}<span style="font-size:11px;font-weight:400;color:#666">日</span></span>
+        <button onclick="adjNenkyu('${s.id}',1)" style="width:28px;height:28px;border:1px solid var(--border);border-radius:6px;background:#fafafa;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center">＋</button>
+        <button onclick="setNenkyuDirect('${s.id}')" style="padding:4px 10px;border:1px solid var(--border);border-radius:6px;background:#fafafa;font-size:11px;cursor:pointer">直接入力</button>
+      </div>
+    </div>`;
+  });
+  h+=`</div>
+  <div class="card">
+    <div class="card-t">今月の年休使用状況</div>`;
+  const y=S.aYr,m=S.aMo;
+  S.staffList.filter(s=>s.type!=='bait').forEach(s=>{
+    const reqs=getReqs(y,m,s.id);
+    const rtypes=getReqTypes(y,m,s.id);
+    const nenkyuUsed=reqs.filter(d=>rtypes[d]==='nenkyuu').length;
+    const offUsed=reqs.length-nenkyuUsed;
+    const maxOff=monthOffDays(m);
+    h+=`<div class="staff-item">
+      <span style="font-size:12px">${s.name}</span>
+      <div style="text-align:right">
+        <span style="font-size:11px;background:#FAEEDA;color:#633806;padding:2px 7px;border-radius:10px;margin-right:4px">週休 ${offUsed}/${maxOff}日</span>
+        <span style="font-size:11px;background:#EAF3DE;color:#27500A;padding:2px 7px;border-radius:10px">年休 ${nenkyuUsed}日使用</span>
+      </div>
+    </div>`;
+  });
+  h+=`</div>`;
+  return h;
+}
+
+function adjNenkyu(sid,delta){
+  const cur=getNenkyuBalance(sid);
+  const next=Math.max(0,cur+delta);
+  saveNenkyuBalance(sid,next);
+  render();
+}
+
+function setNenkyuDirect(sid){
+  const cur=getNenkyuBalance(sid);
+  const staff=S.staffList.find(s=>s.id===sid);
+  const val=prompt(`${staff.name}の年休残日数を入力してください（現在: ${cur}日）`,''+cur);
+  if(val===null)return;
+  const n=parseInt(val);
+  if(isNaN(n)||n<0){showFlash('0以上の数値を入力してください','ab');return;}
+  saveNenkyuBalance(sid,n);
+  render();
 }
 
 function renderWelfare(y,m){
@@ -838,6 +1212,7 @@ function clearMonth(){
 function openReqEdit(sid){
   const y=S.aYr,m=S.aMo;
   const staff=S.staffList.find(s=>s.id===sid);
+  if(staff&&staff.type==='bait'){openBaitAdminEdit(sid);return;}
   const reqs=getReqs(y,m,sid);
   const days=dim(y,m);
   const wl=['日','月','火','水','木','金','土'];
@@ -855,9 +1230,14 @@ function openReqEdit(sid){
     const bg=isReq?'#FAEEDA':isSat?'rgba(24,95,165,.08)':isSun?'rgba(163,45,45,.08)':'#fafafa';
     const border=isReq?'1.5px solid #854F0B':isSat?'1px solid rgba(24,95,165,.3)':isSun?'1px solid rgba(163,45,45,.3)':'1px solid #e0e0e0';
     const dnCol=isSat?'#185FA5':isSun?'#A32D2D':'#1a1a1a';
-    calH+=`<div onclick="adminTogReq('${sid}',${d})" style="min-height:38px;display:flex;flex-direction:column;align-items:center;justify-content:center;border-radius:6px;cursor:pointer;background:${bg};border:${border};transition:all .1s">
+    const rtype2=(getReqTypes(y,m,sid))[d]||'off';
+    const reqBg2=isReq?(rtype2==='nenkyuu'?'#EAF3DE':'#FAEEDA'):isSat?'rgba(24,95,165,.08)':isSun?'rgba(163,45,45,.08)':'#fafafa';
+    const reqBorder2=isReq?(rtype2==='nenkyuu'?'1.5px solid #3B6D11':'1.5px solid #854F0B'):isSat?'1px solid rgba(24,95,165,.3)':isSun?'1px solid rgba(163,45,45,.3)':'1px solid #e0e0e0';
+    const reqLabel2=isReq?(rtype2==='nenkyuu'?'年休':'週休'):'';
+    const reqLabelColor2=rtype2==='nenkyuu'?'#27500A':'#633806';
+    calH+=`<div onclick="adminTogReq('${sid}',${d})" style="min-height:38px;display:flex;flex-direction:column;align-items:center;justify-content:center;border-radius:6px;cursor:pointer;background:${reqBg2};border:${reqBorder2};transition:all .1s">
       <span style="font-size:12px;font-weight:600;color:${dnCol}">${d}</span>
-      ${isReq?`<span style="font-size:8px;color:#633806;font-weight:600">希望休</span>`:''}
+      ${isReq?`<span style="font-size:8px;color:${reqLabelColor2};font-weight:600">${reqLabel2}</span>`:''}
       ${hol?`<span style="font-size:7px;color:#A32D2D">祝</span>`:''}
     </div>`;
   }
@@ -871,9 +1251,13 @@ function openReqEdit(sid){
         <h3 style="font-size:16px;font-weight:600">${staff.name}</h3>
         <button onclick="closeModal()" style="border:none;background:none;font-size:22px;color:#999;cursor:pointer;padding:0 4px">×</button>
       </div>
-      <div style="display:flex;align-items:center;gap:6px;margin-bottom:12px">
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
         <span style="display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;background:${staff.type==='nurse'?'#E6F1FB':staff.type==='care'?'#EAF3DE':'#FAEEDA'};color:${staff.type==='nurse'?'#0C447C':staff.type==='care'?'#27500A':'#633806'}">${typeLbl}</span>
-        <span style="font-size:12px;color:#666">${y}年${m+1}月　希望休：<strong style="color:#633806">${reqs.length}</strong>/${MAX_REQ}回</span>
+        <span style="font-size:12px;color:#666">${y}年${m+1}月</span>
+      </div>
+      <div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap">
+        <span style="font-size:11px;background:#FAEEDA;color:#633806;padding:3px 10px;border-radius:10px">🟨 週休 ${(()=>{const rt=getReqTypes(y,m,sid);return reqs.filter(d=>!rt[d]||rt[d]==='off').length;})()}/${monthOffDays(m)}日</span>
+        <span style="font-size:11px;background:#EAF3DE;color:#27500A;padding:3px 10px;border-radius:10px">🟩 年休使用 ${(()=>{const rt=getReqTypes(y,m,sid);return reqs.filter(d=>rt[d]==='nenkyuu').length;})()}日　残 ${getNenkyuBalance(sid)}日</span>
       </div>
       <div style="background:#FDF4FF;border-left:4px solid #854F0B;border-radius:6px;padding:8px 12px;font-size:11px;color:#633806;margin-bottom:12px;line-height:1.6">
         📌 日付をタップして希望休を登録・解除できます。管理者入力のため入力期間制限はありません。
@@ -887,19 +1271,59 @@ function openReqEdit(sid){
   </div>`;
 }
 
-function adminTogReq(sid,day){
+function adminTogReq(sid,day,type){
   const y=S.aYr,m=S.aMo;
   let reqs=[...getReqs(y,m,sid)];
+  const rtypes={...getReqTypes(y,m,sid)};
   if(reqs.includes(day)){
+    // 解除
+    if(rtypes[day]==='nenkyuu') saveNenkyuBalance(sid,getNenkyuBalance(sid)+1);
     reqs=reqs.filter(d=>d!==day);
+    delete rtypes[day];
+    saveReqs(y,m,sid,reqs);
+    saveReqTypes(y,m,sid,rtypes);
+    openReqEdit(sid);
   } else {
-    if(reqs.length>=MAX_REQ){
-      if(!confirm(reqs.length+'回登録済みです。上限を超えて追加しますか？'))return;
-    }
-    reqs.push(day);
-    reqs.sort((a,b)=>a-b);
+    // 管理者は種別選択モーダルを出す
+    openAdminReqTypeModal(sid,day);
   }
+}
+
+function openAdminReqTypeModal(sid,day){
+  const y=S.aYr,m=S.aMo;
+  const staff=S.staffList.find(s=>s.id===sid);
+  const reqs=getReqs(y,m,sid);
+  const rtypes=getReqTypes(y,m,sid);
+  const nenkyuUsed=reqs.filter(d=>rtypes[d]==='nenkyuu').length;
+  const offUsed=reqs.length-nenkyuUsed;
+  const maxOff=monthOffDays(m);
+  const nenkyuBal=getNenkyuBalance(sid);
+  document.getElementById('modal-area').innerHTML=`
+  <div style="position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:600;display:flex;align-items:center;justify-content:center;padding:16px" onclick="document.getElementById('modal-area').innerHTML='';openReqEdit('${sid}')">
+    <div style="background:#fff;border-radius:16px;padding:20px 18px;width:100%;max-width:360px" onclick="event.stopPropagation()">
+      <div style="font-size:15px;font-weight:600;margin-bottom:4px">${staff.name}　${m+1}月${day}日</div>
+      <div style="font-size:12px;color:#666;margin-bottom:14px">休暇種別を選択してください</div>
+      <button onclick="adminConfirmReq('${sid}',${day},'off')" style="display:block;width:100%;padding:12px;background:#FAEEDA;color:#633806;border:1.5px solid #854F0B;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;margin-bottom:10px">
+        🟨 週休（所定休日）<br><span style="font-size:11px;font-weight:400">使用 ${offUsed}/${maxOff}日</span>
+      </button>
+      <button onclick="adminConfirmReq('${sid}',${day},'nenkyuu')" style="display:block;width:100%;padding:12px;background:#EAF3DE;color:#27500A;border:1.5px solid #3B6D11;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;margin-bottom:10px">
+        🟩 年次有給休暇<br><span style="font-size:11px;font-weight:400">残 ${nenkyuBal}日</span>
+      </button>
+      <button onclick="document.getElementById('modal-area').innerHTML='';openReqEdit('${sid}')" style="display:block;width:100%;padding:10px;background:#f5f5f5;color:#666;border:none;border-radius:10px;font-size:13px;cursor:pointer">キャンセル</button>
+    </div>
+  </div>`;
+}
+
+function adminConfirmReq(sid,day,type){
+  const y=S.aYr,m=S.aMo;
+  let reqs=[...getReqs(y,m,sid)];
+  const rtypes={...getReqTypes(y,m,sid)};
+  reqs.push(day);reqs.sort((a,b)=>a-b);
+  rtypes[day]=type;
+  if(type==='nenkyuu') saveNenkyuBalance(sid,Math.max(0,getNenkyuBalance(sid)-1));
   saveReqs(y,m,sid,reqs);
+  saveReqTypes(y,m,sid,rtypes);
+  document.getElementById('modal-area').innerHTML='';
   openReqEdit(sid);
 }
 
@@ -908,6 +1332,76 @@ function adminClearReqs(sid){
   if(!confirm('この月の希望休を全て削除しますか？'))return;
   saveReqs(y,m,sid,[]);
   openReqEdit(sid);
+}
+
+function openBaitAdminEdit(sid){
+  const y=S.aYr,m=S.aMo;
+  const staff=S.staffList.find(s=>s.id===sid);
+  const baitData={...(S.requests[brk(y,m,sid)]||{})};
+  const days=dim(y,m);
+  const wl=['日','月','火','水','木','金','土'];
+  const first=dow(y,m,1);
+  let calH=`<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px;margin-bottom:12px">`;
+  [['日','#A32D2D'],['月',''],['火',''],['水',''],['木',''],['金',''],['土','#185FA5']].forEach(([d,col])=>{
+    calH+=`<div style="text-align:center;font-size:10px;font-weight:600;padding:3px 0;border-radius:3px;${col?`background:${col};color:#fff`:''}">${d}</div>`;
+  });
+  for(let i=0;i<first;i++) calH+=`<div></div>`;
+  for(let d=1;d<=days;d++){
+    const w=dow(y,m,d),hol=isHoliday(y,m,d);
+    const isSat=w===6,isSun=w===0||hol;
+    const val=baitData[d]||'';
+    const bg=val==='夜勤'?'#3C3489':val==='夜勤明け'?'#EF9F27':isSat?'rgba(24,95,165,.08)':isSun?'rgba(163,45,45,.08)':'#fafafa';
+    const dnCol=val?'#fff':isSat?'#185FA5':isSun?'#A32D2D':'#1a1a1a';
+    const lbl=val==='夜勤'?'夜':val==='夜勤明け'?'明':'';
+    const lblCol=val==='夜勤'?'#EEEDFE':val==='夜勤明け'?'#2d1c00':'';
+    calH+=`<div onclick="adminBaitToggle('${sid}',${d})" style="min-height:38px;display:flex;flex-direction:column;align-items:center;justify-content:center;border-radius:6px;cursor:pointer;background:${bg};border:1px solid ${val?bg:'#e0e0e0'};transition:all .1s">
+      <span style="font-size:12px;font-weight:600;color:${dnCol}">${d}</span>
+      ${lbl?`<span style="font-size:8px;font-weight:700;color:${lblCol}">${lbl}</span>`:''}
+      ${hol&&!val?`<span style="font-size:7px;color:#A32D2D">祝</span>`:''}
+    </div>`;
+  }
+  calH+=`</div>`;
+  const nightCnt=Object.values(baitData).filter(v=>v==='夜勤').length;
+  const akeCnt=Object.values(baitData).filter(v=>v==='夜勤明け').length;
+  document.getElementById('modal-area').innerHTML=`
+  <div style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:500;display:flex;align-items:flex-end;justify-content:center;backdrop-filter:blur(2px)" onclick="closeModal()">
+    <div style="background:#fff;border-radius:20px 20px 0 0;padding:20px 16px;width:100%;max-width:500px;max-height:90vh;overflow-y:auto" onclick="event.stopPropagation()">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <h3 style="font-size:16px;font-weight:600">${staff.name}　夜勤希望</h3>
+        <button onclick="closeModal()" style="border:none;background:none;font-size:22px;color:#999;cursor:pointer">×</button>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:12px">
+        <span style="font-size:11px;background:#3C3489;color:#EEEDFE;padding:3px 10px;border-radius:10px">🌙 夜勤 ${nightCnt}回（上限 ${staff.nightMax}回）</span>
+        <span style="font-size:11px;background:#EF9F27;color:#2d1c00;padding:3px 10px;border-radius:10px">🌅 明け ${akeCnt}回</span>
+      </div>
+      <div style="background:#EEEDFE;border-left:4px solid #3C3489;border-radius:6px;padding:8px 12px;font-size:11px;color:#3C3489;margin-bottom:12px">
+        📌 タップで 夜勤 → 夜勤明け → 解除 の順に切り替わります
+      </div>
+      ${calH}
+      <div style="display:flex;gap:8px">
+        <button onclick="adminBaitClear('${sid}')" style="flex:1;padding:9px;background:#fff;color:#A32D2D;border:1px solid #F7C1C1;border-radius:8px;font-size:12px;cursor:pointer">🗑 全て削除</button>
+        <button onclick="closeModal()" style="flex:1;padding:9px;background:#185FA5;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">完了</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function adminBaitToggle(sid,day){
+  const y=S.aYr,m=S.aMo;
+  const baitData={...(S.requests[brk(y,m,sid)]||{})};
+  const cur=baitData[day]||'';
+  if(cur==='') baitData[day]='夜勤';
+  else if(cur==='夜勤') baitData[day]='夜勤明け';
+  else delete baitData[day];
+  saveBaitReqs(y,m,sid,baitData);
+  openBaitAdminEdit(sid);
+}
+
+function adminBaitClear(sid){
+  const y=S.aYr,m=S.aMo;
+  if(!confirm('バイトの夜勤希望を全て削除しますか？'))return;
+  saveBaitReqs(y,m,sid,{});
+  closeModal();
 }
 
 // ============================================================
@@ -942,11 +1436,18 @@ function genDraft(){
 
   S.staffList.forEach(s=>{
     const reqs=getReqs(y,m,s.id);
+    const baitData=(s.type==='bait')?(S.requests[brk(y,m,s.id)]||{}):{};
     for(let d=1;d<=days;d++){
       const w=dow(y,m,d),wknd=w===0||w===6;
-      if(reqs.includes(d))data[s.id][d]='休み';
-      else if(s.weekendOff&&wknd)data[s.id][d]='休み';
-      else data[s.id][d]='';
+      if(s.type==='bait'){
+        // バイトは夜勤希望データを使用
+        if(baitData[d]) data[s.id][d]=baitData[d];
+        else data[s.id][d]='';
+      } else {
+        if(reqs.includes(d)) data[s.id][d]='休み';
+        else if(s.weekendOff&&wknd) data[s.id][d]='休み';
+        else data[s.id][d]='';
+      }
     }
   });
 
@@ -954,42 +1455,110 @@ function genDraft(){
   const nCare=S.staffList.filter(s=>s.nightOk&&s.type==='care');
   const nc={};S.staffList.forEach(s=>{nc[s.id]=0;});
 
+  // 夜勤セット数カウント: data内で「夜勤→夜勤明け」の連続を数える
+  function countNightSets(sid,upToDay){
+    let sets=0;
+    for(let x=1;x<upToDay;x++){
+      if((data[sid][x]||'')==='夜勤'&&(data[sid][x+1]||'')==='夜勤明け') sets++;
+    }
+    return sets;
+  }
+
   function canNight(s,d){
     if(data[s.id][d]==='休み')return false;
     if(nc[s.id]>=s.nightMax)return false;
     if(d>1&&data[s.id][d-1]==='夜勤')return false;
     if(s.type==='bait'&&d<8)return false;
-    if(d>=3){
-      const d2=data[s.id][d-2]||'',d1=data[s.id][d-1]||'';
-      if(d2==='夜勤'&&d1==='夜勤明け'&&d>=5){
-        const d4=data[s.id][d-4]||'',d3=data[s.id][d-3]||'';
-        if(d4==='夜勤'&&d3==='夜勤明け')return false;
-      }
+    // 夜勤セット上限チェック
+    const sets=countNightSets(s.id,d);
+    const isGH=(s.id==='nightonly-g'||s.id==='nightonly-h');
+    const isNurse=(s.type==='nurse');
+    const maxSets=isGH?3:isNurse?3:2;
+    if(sets>=maxSets)return false;
+    // 夜明夜明の2セット目の後: GH以外は次の夜勤まで最低1休みが必要
+    if(!isGH&&d>=5){
+      const d4=data[s.id][d-4]||'',d3=data[s.id][d-3]||'',
+            d2=data[s.id][d-2]||'',d1=data[s.id][d-1]||'';
+      if(d4==='夜勤'&&d3==='夜勤明け'&&d2==='夜勤'&&d1==='夜勤明け')return false;
     }
     return true;
   }
 
   for(let d=1;d<=days;d++){
     const cn=nNurse.filter(s=>canNight(s,d)).sort((a,b)=>(b.nightCenter?10:0)-(a.nightCenter?10:0)||(b.nightMax-nc[b.id])-(a.nightMax-nc[a.id]));
-    if(cn.length>0){const s=cn[0];data[s.id][d]='夜勤';nc[s.id]++;if(d<days&&!data[s.id][d+1])data[s.id][d+1]='夜勤明け';}
+    if(cn.length>0){
+      const s=cn[0];
+      data[s.id][d]='夜勤';nc[s.id]++;
+      // 夜勤の翌日は必ず明け（上書き）
+      if(d<days) data[s.id][d+1]='夜勤明け';
+      // 明けの翌々日は必ず休み
+      if(d+2<=days && !data[s.id][d+2]) data[s.id][d+2]='休み';
+    }
     const cc=nCare.filter(s=>canNight(s,d)).sort((a,b)=>(b.nightCenter?10:0)-(a.nightCenter?10:0)||(b.nightMax-nc[b.id])-(a.nightMax-nc[a.id]));
-    if(cc.length>0){const s=cc[0];data[s.id][d]='夜勤';nc[s.id]++;if(d<days&&!data[s.id][d+1])data[s.id][d+1]='夜勤明け';}
+    if(cc.length>0){
+      const s=cc[0];
+      data[s.id][d]='夜勤';nc[s.id]++;
+      if(d<days) data[s.id][d+1]='夜勤明け';
+      if(d+2<=days && !data[s.id][d+2]) data[s.id][d+2]='休み';
+    }
   }
 
+  // 全スタッフ: 夜勤明けの翌日は必ず休みに強制セット
   S.staffList.forEach(s=>{
-    for(let d=1;d<days;d++){if(data[s.id][d]==='夜勤明け'&&!data[s.id][d+1])data[s.id][d+1]='休み';}
+    for(let d=1;d<days;d++){
+      if(data[s.id][d]==='夜勤明け'){
+        if(d+1<=days) data[s.id][d+1]='休み';
+      }
+      // 夜勤の翌日が明けになっているか確認・強制
+      if(data[s.id][d]==='夜勤'){
+        if(d+1<=days) data[s.id][d+1]='夜勤明け';
+      }
+    }
+  });
+
+  // 勤務希望を反映（参考として尊重）
+  S.staffList.filter(s=>s.type!=='bait').forEach(s=>{
+    const sp=getShiftPref(y,m,s.id);
+    if(sp&&sp.day>=1&&sp.day<=days){
+      const d=sp.day;
+      // 希望シフトが競合しない場合のみ反映
+      if(!data[s.id][d]||data[s.id][d]===''){
+        data[s.id][d]=sp.shift;
+        // 夜勤希望なら翌日に明けをセット
+        if(sp.shift==='夜勤'&&d<days) data[s.id][d+1]='夜勤明け';
+        if(sp.shift==='夜勤明け'&&d>1&&data[s.id][d-1]==='') data[s.id][d-1]='夜勤';
+      }
+    }
   });
 
   S.staffList.forEach(s=>{
-    const maxRun=(s.id==='kanri-ns'||s.id==='kanri-care')?5:4;
-    let dayRun=0;
+    const isKanri=(s.id==='kanri-ns'||s.id==='kanri-care');
+    const maxRun=isKanri?5:4;
+    const maxRunSets=2; // 月2セットまで（連勤リセット後も累積カウント）
+    let dayRun=0,runSets=0;
     for(let d=1;d<=days;d++){
       if(data[s.id][d]===''){
         if(s.nightOnly||s.nightCenter){data[s.id][d]='休み';dayRun=0;}
-        else if(dayRun>=maxRun){data[s.id][d]='休み';dayRun=0;}
-        else{data[s.id][d]='日勤';dayRun++;}
-      }else if(data[s.id][d]==='日勤')dayRun++;
-      else dayRun=0;
+        else{
+          // 連勤セット上限チェック: 4(5)連続になる瞬間にセット数を消費
+          const willComplete=(dayRun+1>=maxRun);
+          if(willComplete&&runSets>=maxRunSets){
+            // これ以上連勤セットを使えない → 休みにして連勤リセット
+            data[s.id][d]='休み';dayRun=0;
+          } else {
+            data[s.id][d]='日勤';
+            dayRun++;
+            if(willComplete) runSets++;
+          }
+        }
+      }else if(data[s.id][d]==='日勤'){
+        dayRun++;
+        // 既に連勤が続いているとき上限超えたら次の日に休みをセット
+        if(dayRun>=maxRun){runSets++;}
+        if(dayRun>maxRun&&d<days&&!data[s.id][d+1]){data[s.id][d+1]='休み';}
+      }else{
+        dayRun=0;
+      }
     }
   });
 
@@ -1027,9 +1596,16 @@ function shiftIcon(sh){return{日勤:'🌤',夜勤:'🌙','夜勤明け':'🌅',
 
 function setShift(sid,d,sh){
   const y=S.aYr,m=S.aMo,k=sk(y,m);
+  const prev=(S.schedules[k]&&S.schedules[k][sid])?S.schedules[k][sid][d]||'':'';
   if(!S.schedules[k])S.schedules[k]={};
   if(!S.schedules[k][sid])S.schedules[k][sid]={};
   S.schedules[k][sid][d]=sh;
+  // 年休残数自動調整: 有給にセット→残数-1、有給から別シフトに→残数+1
+  if(sh==='有給'&&prev!=='有給'){
+    saveNenkyuBalance(sid,Math.max(0,getNenkyuBalance(sid)-1));
+  } else if(prev==='有給'&&sh!=='有給'){
+    saveNenkyuBalance(sid,getNenkyuBalance(sid)+1);
+  }
   saveSch(y,m,S.schedules[k]);
   closeModal();
 }

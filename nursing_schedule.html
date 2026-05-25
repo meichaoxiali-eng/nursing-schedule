@@ -1517,62 +1517,66 @@ function genDraft(){
   // 夜勤可能なスタッフ全員を個別に処理
   const nightStaff=S.staffList.filter(s=>s.nightOk&&s.type!=='bait');
 
-  // パス1: 夜勤専従を優先して配置（均等分散）
-  const nightCenter=nightStaff.filter(s=>s.nightCenter);
-  nightCenter.forEach(s=>{
-    // 目標間隔: days / nightMax（例: 30/10=3日ごと）
-    const interval=Math.max(3,Math.floor(days/s.nightMax));
-    let lastNight=-interval;
-    for(let d=1;d<=days;d++){
-      if(!canNight(s,d)) continue;
-      // 前回の夜勤からinterval日以上経過していれば配置
-      if(d-lastNight>=interval){
-        assignNight(s,d);
-        lastNight=d;
-        d+=2; // 明け・休みをスキップ
-      }
-    }
-    // 残り回数がある場合は追加配置（後半の空き日に）
-    for(let d=1;d<=days&&nc[s.id]<s.nightMax;d++){
-      if(canNight(s,d)){
-        assignNight(s,d);
-        d+=2;
-      }
-    }
-  });
+  // ── 夜勤配置の方針 ──
+  // 毎日: 看護1名 + 介護1名 のペアを配置
+  // 夜勤専従（nightCenter）を優先、次に一般夜勤可
+  // 同日に同種（介護同士・看護同士）が重複しないよう制御
 
-  // パス2: 一般夜勤可スタッフを配置（均等分散）
-  const normalNight=nightStaff.filter(s=>!s.nightCenter);
-  // 看護と介護を分けて処理
-  ['nurse','care'].forEach(type=>{
-    const group=normalNight.filter(s=>s.type===type);
-    // 毎日「この日に夜勤が必要か」を確認しながら配置
-    for(let d=1;d<=days;d++){
-      // この日に夜勤がいない看護/介護スタッフを探す
-      const alreadyHasNight=group.some(s=>data[s.id][d]==='夜勤');
-      if(alreadyHasNight) continue;
-      // 夜勤可能なスタッフを優先度順で並べる
-      const available=group.filter(s=>canNight(s,d));
-      if(available.length===0) continue;
-      available.sort((a,b)=>{
-        // 残り回数が多い方優先
-        const aRem=a.nightMax-nc[a.id], bRem=b.nightMax-nc[b.id];
-        if(aRem!==bRem) return bRem-aRem;
-        // 最後の夜勤からの経過日数が長い方優先（分散）
-        let aLast=999,bLast=999;
-        for(let x=d-1;x>=1;x--){if(data[a.id][x]==='夜勤'){aLast=d-x;break;}}
-        for(let x=d-1;x>=1;x--){if(data[b.id][x]==='夜勤'){bLast=d-x;break;}}
-        return bLast-aLast;
-      });
-      const s=available[0];
-      const remaining=days-d+1;
-      const needed=s.nightMax-nc[s.id];
-      // 必要な場合のみ配置（残り回数×3日以内になったら強制）
-      if(needed>0&&(remaining<=needed*4)){
-        assignNight(s,d);
+  // その日にすでに夜勤している看護/介護の数を返す
+  function nightCountOnDay(type, d){
+    return S.staffList.filter(s=>s.type===type&&(data[s.id][d]==='夜勤')).length;
+  }
+
+  // 夜勤候補を優先度順にソート
+  function sortByPriority(candidates, d){
+    return [...candidates].sort((a,b)=>{
+      // 夜勤専従優先
+      if(a.nightCenter!==b.nightCenter) return b.nightCenter?1:-1;
+      // 残り回数が多い方優先
+      const aRem=a.nightMax-nc[a.id], bRem=b.nightMax-nc[b.id];
+      if(aRem!==bRem) return bRem-aRem;
+      // 最後の夜勤からの経過日数が長い方優先（分散）
+      let aLast=999,bLast=999;
+      for(let x=d-1;x>=1;x--){if((data[a.id][x]||'')==='夜勤'){aLast=d-x;break;}}
+      for(let x=d-1;x>=1;x--){if((data[b.id][x]||'')==='夜勤'){bLast=d-x;break;}}
+      return bLast-aLast;
+    });
+  }
+
+  // 全夜勤可能スタッフ（バイト除く）
+  const nurseNightStaff=nightStaff.filter(s=>s.type==='nurse');
+  const careNightStaff =nightStaff.filter(s=>s.type==='care');
+
+  for(let d=1;d<=days;d++){
+    // ── 看護夜勤: まだこの日に看護夜勤がいない場合のみ配置 ──
+    if(nightCountOnDay('nurse',d)===0){
+      const nurseAvail=nurseNightStaff.filter(s=>canNight(s,d));
+      const nurseSorted=sortByPriority(nurseAvail,d);
+      if(nurseSorted.length>0){
+        const s=nurseSorted[0];
+        const remaining=days-d+1;
+        const needed=s.nightMax-nc[s.id];
+        // 夜勤専従は毎回配置、一般は残り日数に応じて判断
+        if(s.nightCenter?needed>0:(needed>0&&remaining<=needed*4)){
+          assignNight(s,d);
+        }
       }
     }
-  });
+
+    // ── 介護夜勤: まだこの日に介護夜勤がいない場合のみ配置 ──
+    if(nightCountOnDay('care',d)===0){
+      const careAvail=careNightStaff.filter(s=>canNight(s,d));
+      const careSorted=sortByPriority(careAvail,d);
+      if(careSorted.length>0){
+        const s=careSorted[0];
+        const remaining=days-d+1;
+        const needed=s.nightMax-nc[s.id];
+        if(s.nightCenter?needed>0:(needed>0&&remaining<=needed*4)){
+          assignNight(s,d);
+        }
+      }
+    }
+  }
 
   // 夜勤→明け、明け→休み を全スタッフに強制（2パス）
   for(let pass=0;pass<2;pass++){

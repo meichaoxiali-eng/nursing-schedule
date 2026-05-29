@@ -309,8 +309,8 @@ function saveReqs(y,m,sid,days){
   S.requests[k]=days;
   lsSet(k,days);
   broadcastUpdate(k,days);
-  const jbk=lsGet('jb_key'),jbid=lsGet('jb_bin');
-  if(jbk&&jbid) setTimeout(()=>pushJSONBin(jbk,jbid).catch(()=>{}),800);
+  const jbk=lsGet('jb_key');
+  if(jbk) setTimeout(()=>pushJSONBin(jbk,FIXED_BIN_ID).catch(()=>{}),800);
 }
 function saveSch(y,m,data){
   const k=sk(y,m);
@@ -318,16 +318,16 @@ function saveSch(y,m,data){
   lsSet(k,data);
   broadcastUpdate(k,data);
   // 自動Gist同期
-  const jbk=lsGet('jb_key'),jbid=lsGet('jb_bin');
-  if(jbk&&jbid) setTimeout(()=>pushJSONBin(jbk,jbid).catch(()=>{}),800);
+  const jbk=lsGet('jb_key');
+  if(jbk) setTimeout(()=>pushJSONBin(jbk,FIXED_BIN_ID).catch(()=>{}),800);
 }
 function saveStaff(){
   S.staffList.forEach(s=>{}); // validate
   lsSet('staffList',S.staffList);
   broadcastUpdate('staffList',S.staffList);
   // 自動Gist同期
-  const jbk=lsGet('jb_key'),jbid=lsGet('jb_bin');
-  if(jbk&&jbid) setTimeout(()=>pushJSONBin(jbk,jbid).catch(()=>{}),800);
+  const jbk=lsGet('jb_key');
+  if(jbk) setTimeout(()=>pushJSONBin(jbk,FIXED_BIN_ID).catch(()=>{}),800);
 }
 function saveWelfare(y,m,sid,data){
   const k=wk(y,m,sid);
@@ -1161,9 +1161,9 @@ function renderWelfare(y,m){
 function renderDataMgmt(){
   const y=S.aYr,m=S.aMo;
   const tok=lsGet('jb_key')||'';
-  const gid=lsGet('jb_bin')||'';
-  const syncStatus=gid?`<div class="gb">✅ JSONBin同期設定済み（BIN: ${gid.slice(0,8)}...）</div>`
-    :`<div class="wb">⚠️ JSONBin未設定。X-ACCESS-KEYを入力して接続してください。</div>`;
+  const syncStatus=tok?`<div class="gb">✅ JSONBin同期設定済み</div>`
+    :`<div class="wb">⚠️ X-ACCESS-KEYを入力して「接続する」を押してください。</div>`;
+  const gid=FIXED_BIN_ID;
   return `<div class="card">
     <div class="card-t">☁️ クラウド同期（JSONBin）</div>
     ${syncStatus}
@@ -1195,33 +1195,18 @@ function getAllData(){
   return d;
 }
 
+// BIN IDを固定（全端末共通）
+const FIXED_BIN_ID='6a1952a6ddf5aa59f77366cb';
+
 async function connectJSONBin(){
   const key=document.getElementById('jb-key')?.value?.trim();
   if(!key){showFlash('X-ACCESS-KEYを入力してください','ab');return;}
   lsSet('jb_key',key);
+  lsSet('jb_bin',FIXED_BIN_ID);
   setSyncStatus(false,'JSONBinに接続中...');
   try{
-    let binId=lsGet('jb_bin');
-    if(!binId){
-      // 新規BIN作成
-      const res=await fetch('https://api.jsonbin.io/v3/b',{
-        method:'POST',
-        headers:{
-          'Content-Type':'application/json',
-          'X-Access-Key':key,
-          'X-Bin-Name':'nursing-schedule',
-          'X-Bin-Private':'false'
-        },
-        body:JSON.stringify(getAllData())
-      });
-      if(!res.ok){const t=await res.text();throw new Error('BIN作成失敗: '+res.status+' '+t);}
-      const j=await res.json();
-      binId=j.metadata.id;
-      lsSet('jb_bin',binId);
-    } else {
-      // 既存BINを更新
-      await pushJSONBin(key,binId);
-    }
+    // 固定BINにデータをアップロード
+    await pushJSONBin(key,FIXED_BIN_ID);
     setSyncStatus(true,'同期完了 ✓');
     showFlash('クラウド同期完了 ✓','gb');
     render();
@@ -1233,8 +1218,8 @@ async function connectJSONBin(){
 
 async function pushJSONBin(key,binId){
   key=key||lsGet('jb_key');
-  binId=binId||lsGet('jb_bin');
-  if(!key||!binId)return;
+  binId=FIXED_BIN_ID;
+  if(!key)return;
   const res=await fetch(`https://api.jsonbin.io/v3/b/${binId}`,{
     method:'PUT',
     headers:{'Content-Type':'application/json','X-Access-Key':key},
@@ -1244,8 +1229,10 @@ async function pushJSONBin(key,binId){
 }
 
 async function pullJSONBin(){
-  const key=lsGet('jb_key'),binId=lsGet('jb_bin');
-  if(!key||!binId){showFlash('先に接続設定をしてください','ab');return;}
+  const key=lsGet('jb_key');
+  const binId=FIXED_BIN_ID;
+  lsSet('jb_bin',binId);
+  if(!key){showFlash('X-ACCESS-KEYを入力してください','ab');return;}
   setSyncStatus(false,'データを取得中...');
   try{
     const res=await fetch(`https://api.jsonbin.io/v3/b/${binId}/latest`,{

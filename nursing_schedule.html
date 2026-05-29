@@ -1240,26 +1240,47 @@ async function pullGist(){
   if(!tok||!gid){showFlash('先にGist接続設定をしてください','ab');return;}
   setSyncStatus(false,'データを取得中...');
   try{
-    const res=await fetch(`https://api.github.com/gists/${gid}`,{
-      headers:{'Authorization':'token '+tok}
+    // キャッシュを避けるためタイムスタンプを付与
+    const res=await fetch(`https://api.github.com/gists/${gid}?t=${Date.now()}`,{
+      headers:{'Authorization':'token '+tok,'Cache-Control':'no-cache'}
     });
     if(!res.ok) throw new Error('取得失敗: '+res.status);
     const j=await res.json();
     const raw=j.files['nursing_data.json']?.content;
     if(!raw) throw new Error('データファイルが見つかりません');
     const allData=JSON.parse(raw);
+
+    // 既存の状態をリセットしてから読み込む
+    S.requests={};
+    S.schedules={};
+    S.welfareReqs={};
+    S.nenkyuBalance={};
+    S.reqTypes={};
+    S.shiftPrefs={};
+
     Object.keys(allData).forEach(k=>{
       const v=allData[k];
-      lsSet(k,v);
-      if(k==='staffList')S.staffList=v;
-      else if(k.startsWith('req:')||k.startsWith('baitreq:'))S.requests[k]=v;
-      else if(k.startsWith('sch:'))S.schedules[k]=v;
-      else if(k.startsWith('wlf:'))S.welfareReqs[k]=v;
-      else if(k.startsWith('nenkyu:'))S.nenkyuBalance[k.replace('nenkyu:','')]=v;
-      else if(k.startsWith('rtype:'))S.reqTypes[k]=v;
-      else if(k.startsWith('shiftpref:'))S.shiftPrefs[k]=v;
+      // localStorageにも保存
+      try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
+      // メモリ上の状態に反映
+      if(k==='staffList'){
+        S.staffList=Array.isArray(v)?v:[...DEFAULT_STAFF];
+      } else if(k.startsWith('req:')||k.startsWith('baitreq:')){
+        S.requests[k]=v;
+      } else if(k.startsWith('sch:')){
+        S.schedules[k]=v;
+      } else if(k.startsWith('wlf:')){
+        S.welfareReqs[k]=v;
+      } else if(k.startsWith('nenkyu:')){
+        S.nenkyuBalance[k.replace('nenkyu:','')]=v;
+      } else if(k.startsWith('rtype:')){
+        S.reqTypes[k]=v;
+      } else if(k.startsWith('shiftpref:')){
+        S.shiftPrefs[k]=v;
+      }
     });
-    setSyncStatus(true,'データ取得完了 ✓ - '+new Date().toLocaleTimeString('ja-JP'));
+
+    setSyncStatus(true,'データ取得完了 ✓ '+new Date().toLocaleTimeString('ja-JP'));
     showFlash('最新データを取得しました ✓','gb');
     render();
   }catch(e){

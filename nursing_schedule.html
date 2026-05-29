@@ -309,8 +309,8 @@ function saveReqs(y,m,sid,days){
   S.requests[k]=days;
   lsSet(k,days);
   broadcastUpdate(k,days);
-  const tok=lsGet('gist_token'),gid=lsGet('gist_id');
-  if(tok&&gid) setTimeout(()=>pushGist(tok,gid).catch(()=>{}),500);
+  const jbk=lsGet('jb_key'),jbid=lsGet('jb_bin');
+  if(jbk&&jbid) setTimeout(()=>pushJSONBin(jbk,jbid).catch(()=>{}),800);
 }
 function saveSch(y,m,data){
   const k=sk(y,m);
@@ -318,16 +318,16 @@ function saveSch(y,m,data){
   lsSet(k,data);
   broadcastUpdate(k,data);
   // 自動Gist同期
-  const tok=lsGet('gist_token'),gid=lsGet('gist_id');
-  if(tok&&gid) setTimeout(()=>pushGist(tok,gid).catch(()=>{}),500);
+  const jbk=lsGet('jb_key'),jbid=lsGet('jb_bin');
+  if(jbk&&jbid) setTimeout(()=>pushJSONBin(jbk,jbid).catch(()=>{}),800);
 }
 function saveStaff(){
   S.staffList.forEach(s=>{}); // validate
   lsSet('staffList',S.staffList);
   broadcastUpdate('staffList',S.staffList);
   // 自動Gist同期
-  const tok=lsGet('gist_token'),gid=lsGet('gist_id');
-  if(tok&&gid) setTimeout(()=>pushGist(tok,gid).catch(()=>{}),500);
+  const jbk=lsGet('jb_key'),jbid=lsGet('jb_bin');
+  if(jbk&&jbid) setTimeout(()=>pushJSONBin(jbk,jbid).catch(()=>{}),800);
 }
 function saveWelfare(y,m,sid,data){
   const k=wk(y,m,sid);
@@ -1160,17 +1160,17 @@ function renderWelfare(y,m){
 // ============================================================
 function renderDataMgmt(){
   const y=S.aYr,m=S.aMo;
-  const tok=lsGet('gist_token')||'';
-  const gid=lsGet('gist_id')||'';
-  const syncStatus=gid?`<div class="gb">✅ Gist同期設定済み（ID: ${gid.slice(0,8)}...）</div>`
-    :`<div class="wb">⚠️ Gist未設定。トークンを入力して接続してください。</div>`;
+  const tok=lsGet('jb_key')||'';
+  const gid=lsGet('jb_bin')||'';
+  const syncStatus=gid?`<div class="gb">✅ JSONBin同期設定済み（BIN: ${gid.slice(0,8)}...）</div>`
+    :`<div class="wb">⚠️ JSONBin未設定。X-ACCESS-KEYを入力して接続してください。</div>`;
   return `<div class="card">
-    <div class="card-t">☁️ クラウド同期（GitHub Gist）</div>
+    <div class="card-t">☁️ クラウド同期（JSONBin）</div>
     ${syncStatus}
-    <div style="margin:10px 0 6px;font-size:12px;font-weight:600;color:var(--txt2)">GitHubトークン</div>
-    <input type="password" id="gist-token" value="${tok}" placeholder="ghp_..." style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;background:#fafafa;font-size:12px;margin-bottom:8px">
-    <button class="bp" onclick="connectGist()" style="margin-top:0">☁️ 接続する / 同期する</button>
-    ${gid?`<button class="bs" onclick="pullGist()" style="margin-top:6px">⬇️ 最新データを取得</button>`:''}
+    <div style="margin:10px 0 6px;font-size:12px;font-weight:600;color:var(--txt2)">X-ACCESS-KEY</div>
+    <input type="password" id="jb-key" value="${tok}" placeholder="$2a$10$..." style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;background:#fafafa;font-size:12px;margin-bottom:8px">
+    <button class="bp" onclick="connectJSONBin()" style="margin-top:0">☁️ 接続する / アップロード</button>
+    ${gid?`<button class="bs" onclick="pullJSONBin()" style="margin-top:6px">⬇️ 最新データを取得</button>`:''}
     <div class="sep2" style="margin:14px 0"></div>
     <div class="card-t">📤 手動エクスポート／インポート</div>
     <button class="bs" onclick="exportData()" style="margin-top:0">📤 エクスポート（JSON）</button>
@@ -1185,31 +1185,44 @@ function renderDataMgmt(){
   </div>`;
 }
 
-// ── Gist同期関数 ──
-async function connectGist(){
-  const tok=document.getElementById('gist-token')?.value?.trim();
-  if(!tok){showFlash('トークンを入力してください','ab');return;}
-  lsSet('gist_token',tok);
-  setSyncStatus(false,'Gistに接続中...');
+// ── JSONBin同期関数 ──
+function getAllData(){
+  const d={};
+  for(let i=0;i<localStorage.length;i++){
+    const k=localStorage.key(i);
+    if(k&&!k.startsWith('jb_')&&!k.startsWith('gist_'))d[k]=lsGet(k);
+  }
+  return d;
+}
+
+async function connectJSONBin(){
+  const key=document.getElementById('jb-key')?.value?.trim();
+  if(!key){showFlash('X-ACCESS-KEYを入力してください','ab');return;}
+  lsSet('jb_key',key);
+  setSyncStatus(false,'JSONBinに接続中...');
   try{
-    // 既存GistIDがあるか確認
-    let gid=lsGet('gist_id');
-    if(!gid){
-      // 新規Gist作成
-      const res=await fetch('https://api.github.com/gists',{
+    let binId=lsGet('jb_bin');
+    if(!binId){
+      // 新規BIN作成
+      const res=await fetch('https://api.jsonbin.io/v3/b',{
         method:'POST',
-        headers:{'Authorization':'token '+tok,'Content-Type':'application/json'},
-        body:JSON.stringify({description:'Nursing Schedule Data',public:false,
-          files:{'nursing_data.json':{content:JSON.stringify({_init:true})}}})
+        headers:{
+          'Content-Type':'application/json',
+          'X-Access-Key':key,
+          'X-Bin-Name':'nursing-schedule',
+          'X-Bin-Private':'false'
+        },
+        body:JSON.stringify(getAllData())
       });
-      if(!res.ok) throw new Error('Gist作成失敗: '+res.status);
+      if(!res.ok){const t=await res.text();throw new Error('BIN作成失敗: '+res.status+' '+t);}
       const j=await res.json();
-      gid=j.id;
-      lsSet('gist_id',gid);
+      binId=j.metadata.id;
+      lsSet('jb_bin',binId);
+    } else {
+      // 既存BINを更新
+      await pushJSONBin(key,binId);
     }
-    // データをアップロード
-    await pushGist(tok,gid);
-    setSyncStatus(true,'Gist同期完了 ✓');
+    setSyncStatus(true,'同期完了 ✓');
     showFlash('クラウド同期完了 ✓','gb');
     render();
   }catch(e){
@@ -1218,69 +1231,47 @@ async function connectGist(){
   }
 }
 
-async function pushGist(tok,gid){
-  tok=tok||lsGet('gist_token');
-  gid=gid||lsGet('gist_id');
-  if(!tok||!gid)return;
-  const allData={};
-  for(let i=0;i<localStorage.length;i++){
-    const k=localStorage.key(i);
-    if(k&&!k.startsWith('gist_'))allData[k]=lsGet(k);
-  }
-  const res=await fetch(`https://api.github.com/gists/${gid}`,{
-    method:'PATCH',
-    headers:{'Authorization':'token '+tok,'Content-Type':'application/json'},
-    body:JSON.stringify({files:{'nursing_data.json':{content:JSON.stringify(allData)}}})
+async function pushJSONBin(key,binId){
+  key=key||lsGet('jb_key');
+  binId=binId||lsGet('jb_bin');
+  if(!key||!binId)return;
+  const res=await fetch(`https://api.jsonbin.io/v3/b/${binId}`,{
+    method:'PUT',
+    headers:{'Content-Type':'application/json','X-Access-Key':key},
+    body:JSON.stringify(getAllData())
   });
-  if(!res.ok) throw new Error('プッシュ失敗: '+res.status);
+  if(!res.ok){const t=await res.text();throw new Error('更新失敗: '+res.status+' '+t);}
 }
 
-async function pullGist(){
-  const tok=lsGet('gist_token'),gid=lsGet('gist_id');
-  if(!tok||!gid){showFlash('先にGist接続設定をしてください','ab');return;}
+async function pullJSONBin(){
+  const key=lsGet('jb_key'),binId=lsGet('jb_bin');
+  if(!key||!binId){showFlash('先に接続設定をしてください','ab');return;}
   setSyncStatus(false,'データを取得中...');
   try{
-    // キャッシュを避けるためタイムスタンプを付与
-    const res=await fetch(`https://api.github.com/gists/${gid}?t=${Date.now()}`,{
-      headers:{'Authorization':'token '+tok,'Cache-Control':'no-cache'}
+    const res=await fetch(`https://api.jsonbin.io/v3/b/${binId}/latest`,{
+      headers:{'X-Access-Key':key}
     });
-    if(!res.ok) throw new Error('取得失敗: '+res.status);
+    if(!res.ok){const t=await res.text();throw new Error('取得失敗: '+res.status+' '+t);}
     const j=await res.json();
-    const raw=j.files['nursing_data.json']?.content;
-    if(!raw) throw new Error('データファイルが見つかりません');
-    const allData=JSON.parse(raw);
+    const allData=j.record;
+    if(!allData)throw new Error('データが空です');
 
-    // 既存の状態をリセットしてから読み込む
-    S.requests={};
-    S.schedules={};
-    S.welfareReqs={};
-    S.nenkyuBalance={};
-    S.reqTypes={};
-    S.shiftPrefs={};
+    // 状態をリセット
+    S.requests={};S.schedules={};S.welfareReqs={};
+    S.nenkyuBalance={};S.reqTypes={};S.shiftPrefs={};
 
     Object.keys(allData).forEach(k=>{
       const v=allData[k];
-      // localStorageにも保存
       try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
-      // メモリ上の状態に反映
-      if(k==='staffList'){
-        S.staffList=Array.isArray(v)?v:[...DEFAULT_STAFF];
-      } else if(k.startsWith('req:')||k.startsWith('baitreq:')){
-        S.requests[k]=v;
-      } else if(k.startsWith('sch:')){
-        S.schedules[k]=v;
-      } else if(k.startsWith('wlf:')){
-        S.welfareReqs[k]=v;
-      } else if(k.startsWith('nenkyu:')){
-        S.nenkyuBalance[k.replace('nenkyu:','')]=v;
-      } else if(k.startsWith('rtype:')){
-        S.reqTypes[k]=v;
-      } else if(k.startsWith('shiftpref:')){
-        S.shiftPrefs[k]=v;
-      }
+      if(k==='staffList') S.staffList=Array.isArray(v)?v:[...DEFAULT_STAFF];
+      else if(k.startsWith('req:')||k.startsWith('baitreq:')) S.requests[k]=v;
+      else if(k.startsWith('sch:')) S.schedules[k]=v;
+      else if(k.startsWith('wlf:')) S.welfareReqs[k]=v;
+      else if(k.startsWith('nenkyu:')) S.nenkyuBalance[k.replace('nenkyu:','')]=v;
+      else if(k.startsWith('rtype:')) S.reqTypes[k]=v;
+      else if(k.startsWith('shiftpref:')) S.shiftPrefs[k]=v;
     });
-
-    setSyncStatus(true,'データ取得完了 ✓ '+new Date().toLocaleTimeString('ja-JP'));
+    setSyncStatus(true,'取得完了 ✓ '+new Date().toLocaleTimeString('ja-JP'));
     showFlash('最新データを取得しました ✓','gb');
     render();
   }catch(e){

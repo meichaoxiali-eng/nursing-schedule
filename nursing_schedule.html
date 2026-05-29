@@ -22,6 +22,20 @@
 body{font-family:-apple-system,BlinkMacSystemFont,'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif;font-size:14px;color:var(--txt);background:var(--bg);min-height:100vh}
 button,select,input{font-family:inherit;font-size:13px;color:var(--txt)}
 .app{max-width:500px;margin:0 auto;background:var(--bg);min-height:100vh;padding-bottom:20px}
+@media(min-width:900px){
+  .app{max-width:100%;padding:0 24px 40px}
+  .nav{padding:0 24px}
+  .hdr{padding:14px 24px}
+  .sec{padding:16px 0}
+  .sw{overflow-x:auto}
+  .st{font-size:11px}
+  .st td,.st th{padding:3px 5px;min-width:26px}
+  .modal{max-width:500px;margin:0 auto;border-radius:14px;position:relative;top:auto}
+  .modal-bg{align-items:center}
+  .card{border-radius:12px}
+  .tab-row{flex-wrap:wrap}
+  .pc-grid{display:grid;grid-template-columns:340px 1fr;gap:20px;align-items:start}
+}
 /* Header */
 .hdr{background:var(--bl);color:#fff;padding:12px 16px;position:sticky;top:0;z-index:100;box-shadow:0 2px 8px rgba(0,0,0,.2)}
 .hdr h1{font-size:16px;font-weight:600;letter-spacing:.5px}
@@ -226,7 +240,7 @@ const DEFAULT_STAFF=[
   {id:'k-san',name:'Kさん（介護）',type:'care',nightOk:true,weekendOff:false,nightMax:4,dayOnly:false,nightCenter:false,nightOnly:false,isKanri:false},
 ];
 
-const SHIFTS=['日勤','夜勤','夜勤明け','休み','有給'];
+const SHIFTS=['日勤','A勤','P勤','夜勤','夜勤明け','休み','有給','空白'];
 const PW='sakura2024';
 const INPUT_START=10, INPUT_END=17, MAX_REQ=3;
 
@@ -295,17 +309,25 @@ function saveReqs(y,m,sid,days){
   S.requests[k]=days;
   lsSet(k,days);
   broadcastUpdate(k,days);
+  const tok=lsGet('gist_token'),gid=lsGet('gist_id');
+  if(tok&&gid) setTimeout(()=>pushGist(tok,gid).catch(()=>{}),500);
 }
 function saveSch(y,m,data){
   const k=sk(y,m);
   S.schedules[k]=data;
   lsSet(k,data);
   broadcastUpdate(k,data);
+  // 自動Gist同期
+  const tok=lsGet('gist_token'),gid=lsGet('gist_id');
+  if(tok&&gid) setTimeout(()=>pushGist(tok,gid).catch(()=>{}),500);
 }
 function saveStaff(){
   S.staffList.forEach(s=>{}); // validate
   lsSet('staffList',S.staffList);
   broadcastUpdate('staffList',S.staffList);
+  // 自動Gist同期
+  const tok=lsGet('gist_token'),gid=lsGet('gist_id');
+  if(tok&&gid) setTimeout(()=>pushGist(tok,gid).catch(()=>{}),500);
 }
 function saveWelfare(y,m,sid,data){
   const k=wk(y,m,sid);
@@ -870,7 +892,13 @@ function renderSchTab(y,m,data){
       <th class="sc-h">休</th><th class="sc-h">有</th><th class="sc-h">日</th><th class="sc-h">夜</th><th class="sc-h">明</th>
     </tr></thead><tbody>`;
 
+  let prevType='';
   S.staffList.forEach(s=>{
+    // 看護師→介護士の切り替え時に空白行を挿入
+    if(prevType==='nurse'&&s.type==='care'){
+      h+=`<tr style="height:6px"><td class="fn" style="border:none;background:transparent" colspan="${days+6}"></td></tr>`;
+    }
+    prevType=s.type;
     const tcls=s.type==='nurse'?'ns':s.type==='care'?'cs':'bs2';
     const ct=counts(s.id);
     h+=`<tr>
@@ -1035,9 +1063,11 @@ function renderStaffMgmt(){
           </div>
           <span style="font-size:10px;color:var(--txt3)">夜勤${s.nightOk?'可':'不可'}${s.nightMax>0?' 上限'+s.nightMax+'回':''}${s.weekendOff?' 土日休':''}${s.isKanri?' 管理者(5連勤可)':''}</span>
         </div>
-        <div style="display:flex;gap:5px;flex-shrink:0">
-          <button style="padding:5px 10px;border:1px solid var(--border);border-radius:7px;background:#fafafa;font-size:11px;cursor:pointer" onclick="openEditStaff('${s.id}')">編集</button>
-          <button style="padding:5px 10px;border:1px solid #F7C1C1;border-radius:7px;background:#fff;color:var(--rd);font-size:11px;cursor:pointer" onclick="delStaff('${s.id}')">削除</button>
+        <div style="display:flex;gap:4px;flex-shrink:0">
+          <button style="padding:5px 8px;border:1px solid var(--border);border-radius:7px;background:#fafafa;font-size:14px;cursor:pointer;line-height:1" onclick="moveStaff('${s.id}',-1)" title="上へ">↑</button>
+          <button style="padding:5px 8px;border:1px solid var(--border);border-radius:7px;background:#fafafa;font-size:14px;cursor:pointer;line-height:1" onclick="moveStaff('${s.id}',1)" title="下へ">↓</button>
+          <button style="padding:5px 8px;border:1px solid var(--border);border-radius:7px;background:#fafafa;font-size:11px;cursor:pointer" onclick="openEditStaff('${s.id}')">編集</button>
+          <button style="padding:5px 8px;border:1px solid #F7C1C1;border-radius:7px;background:#fff;color:var(--rd);font-size:11px;cursor:pointer" onclick="delStaff('${s.id}')">削除</button>
         </div>
       </div>`;
     });
@@ -1130,24 +1160,112 @@ function renderWelfare(y,m){
 // ============================================================
 function renderDataMgmt(){
   const y=S.aYr,m=S.aMo;
+  const tok=lsGet('gist_token')||'';
+  const gid=lsGet('gist_id')||'';
+  const syncStatus=gid?`<div class="gb">✅ Gist同期設定済み（ID: ${gid.slice(0,8)}...）</div>`
+    :`<div class="wb">⚠️ Gist未設定。トークンを入力して接続してください。</div>`;
   return `<div class="card">
-    <div class="card-t">📤 データ共有（エクスポート／インポート）</div>
-    <div class="ib" style="margin-bottom:10px">
-      <strong>スタッフ間でデータを共有する方法：</strong><br>
-      ① 管理者が「エクスポート」でJSONファイルを保存<br>
-      ② LINEやメール等でスタッフへ送信<br>
-      ③ 各スタッフが「インポート」でデータを読み込む
-    </div>
-    <button class="bp" onclick="exportData()">📤 全データをエクスポート（JSON）</button>
-    <div style="margin-top:12px;font-size:12px;font-weight:600;color:var(--txt2);margin-bottom:6px">インポート（JSONファイルを選択）</div>
+    <div class="card-t">☁️ クラウド同期（GitHub Gist）</div>
+    ${syncStatus}
+    <div style="margin:10px 0 6px;font-size:12px;font-weight:600;color:var(--txt2)">GitHubトークン</div>
+    <input type="password" id="gist-token" value="${tok}" placeholder="ghp_..." style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;background:#fafafa;font-size:12px;margin-bottom:8px">
+    <button class="bp" onclick="connectGist()" style="margin-top:0">☁️ 接続する / 同期する</button>
+    ${gid?`<button class="bs" onclick="pullGist()" style="margin-top:6px">⬇️ 最新データを取得</button>`:''}
+    <div class="sep2" style="margin:14px 0"></div>
+    <div class="card-t">📤 手動エクスポート／インポート</div>
+    <button class="bs" onclick="exportData()" style="margin-top:0">📤 エクスポート（JSON）</button>
+    <div style="margin-top:8px;font-size:12px;font-weight:600;color:var(--txt2);margin-bottom:6px">インポート（JSONファイルを選択）</div>
     <input type="file" id="import-file" accept=".json" onchange="importData(this)" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;background:#fafafa;font-size:12px">
     <div class="sep2" style="margin:14px 0"></div>
     <div class="card-t">🗑 データ初期化</div>
-    <div class="wb">この操作は取り消せません。慎重に行ってください。</div>
+    <div class="wb">この操作は取り消せません。</div>
     <button onclick="clearMonth()" style="padding:8px 14px;border:1px solid #F7C1C1;border-radius:8px;background:#fff;color:var(--rd);font-size:12px;cursor:pointer;width:100%;margin-top:4px">
       ${y}年${m+1}月のデータを削除
     </button>
   </div>`;
+}
+
+// ── Gist同期関数 ──
+async function connectGist(){
+  const tok=document.getElementById('gist-token')?.value?.trim();
+  if(!tok){showFlash('トークンを入力してください','ab');return;}
+  lsSet('gist_token',tok);
+  setSyncStatus(false,'Gistに接続中...');
+  try{
+    // 既存GistIDがあるか確認
+    let gid=lsGet('gist_id');
+    if(!gid){
+      // 新規Gist作成
+      const res=await fetch('https://api.github.com/gists',{
+        method:'POST',
+        headers:{'Authorization':'token '+tok,'Content-Type':'application/json'},
+        body:JSON.stringify({description:'Nursing Schedule Data',public:false,
+          files:{'nursing_data.json':{content:JSON.stringify({_init:true})}}})
+      });
+      if(!res.ok) throw new Error('Gist作成失敗: '+res.status);
+      const j=await res.json();
+      gid=j.id;
+      lsSet('gist_id',gid);
+    }
+    // データをアップロード
+    await pushGist(tok,gid);
+    setSyncStatus(true,'Gist同期完了 ✓');
+    showFlash('クラウド同期完了 ✓','gb');
+    render();
+  }catch(e){
+    setSyncStatus(false,'同期エラー: '+e.message);
+    showFlash('同期エラー: '+e.message,'ab');
+  }
+}
+
+async function pushGist(tok,gid){
+  tok=tok||lsGet('gist_token');
+  gid=gid||lsGet('gist_id');
+  if(!tok||!gid)return;
+  const allData={};
+  for(let i=0;i<localStorage.length;i++){
+    const k=localStorage.key(i);
+    if(k&&!k.startsWith('gist_'))allData[k]=lsGet(k);
+  }
+  const res=await fetch(`https://api.github.com/gists/${gid}`,{
+    method:'PATCH',
+    headers:{'Authorization':'token '+tok,'Content-Type':'application/json'},
+    body:JSON.stringify({files:{'nursing_data.json':{content:JSON.stringify(allData)}}})
+  });
+  if(!res.ok) throw new Error('プッシュ失敗: '+res.status);
+}
+
+async function pullGist(){
+  const tok=lsGet('gist_token'),gid=lsGet('gist_id');
+  if(!tok||!gid){showFlash('先にGist接続設定をしてください','ab');return;}
+  setSyncStatus(false,'データを取得中...');
+  try{
+    const res=await fetch(`https://api.github.com/gists/${gid}`,{
+      headers:{'Authorization':'token '+tok}
+    });
+    if(!res.ok) throw new Error('取得失敗: '+res.status);
+    const j=await res.json();
+    const raw=j.files['nursing_data.json']?.content;
+    if(!raw) throw new Error('データファイルが見つかりません');
+    const allData=JSON.parse(raw);
+    Object.keys(allData).forEach(k=>{
+      const v=allData[k];
+      lsSet(k,v);
+      if(k==='staffList')S.staffList=v;
+      else if(k.startsWith('req:')||k.startsWith('baitreq:'))S.requests[k]=v;
+      else if(k.startsWith('sch:'))S.schedules[k]=v;
+      else if(k.startsWith('wlf:'))S.welfareReqs[k]=v;
+      else if(k.startsWith('nenkyu:'))S.nenkyuBalance[k.replace('nenkyu:','')]=v;
+      else if(k.startsWith('rtype:'))S.reqTypes[k]=v;
+      else if(k.startsWith('shiftpref:'))S.shiftPrefs[k]=v;
+    });
+    setSyncStatus(true,'データ取得完了 ✓ - '+new Date().toLocaleTimeString('ja-JP'));
+    showFlash('最新データを取得しました ✓','gb');
+    render();
+  }catch(e){
+    setSyncStatus(false,'取得エラー: '+e.message);
+    showFlash('取得エラー: '+e.message,'ab');
+  }
 }
 
 function exportData(){
@@ -1412,9 +1530,11 @@ function adminBaitClear(sid){
 //  シフトバッジ
 // ============================================================
 function shBadge(sh){
-  if(!sh)return'';
+  if(!sh||sh==='空白')return'';
   return{
     '日勤':'<span class="sd">日</span>',
+    'A勤':'<span class="sd" style="background:#C8E6FA;color:#0C447C">A</span>',
+    'P勤':'<span class="sd" style="background:#B3D4F7;color:#0C447C">P</span>',
     '夜勤':'<span class="sn">夜</span>',
     '夜勤明け':'<span class="sa">明</span>',
     '休み':'<span class="sr">休</span>',
@@ -1705,18 +1825,25 @@ function genDraft(){
 function openEdit(e,sid,d){
   e.stopPropagation();
   const s=S.staffList.find(x=>x.id===sid);
+  const y=S.aYr,m=S.aMo;
+  const schData=S.schedules[sk(y,m)]||{};
+  const curShift=(schData[sid]||{})[d]||'';
+  const reqs=getReqs(y,m,sid);
+  const isReqDay=reqs.includes(d);
+  const reqAlert=isReqDay?`<div style="background:#FAEEDA;border-left:3px solid #854F0B;border-radius:0 8px 8px 0;padding:8px 12px;margin-bottom:12px;font-size:12px;color:#633806">📅 この日は<strong>希望休</strong>として登録されています。変更は可能ですが本人の希望を確認してください。</div>`:'';
   document.getElementById('modal-area').innerHTML=`
   <div class="modal-bg" onclick="closeModal()">
     <div class="modal" onclick="event.stopPropagation()">
-      <h3>${s?.name||sid}　${d}日</h3>
-      ${SHIFTS.map(sh=>`<button class="shift-btn" onclick="setShift('${sid}',${d},'${sh}')">${shiftIcon(sh)}&nbsp; ${sh}</button>`).join('')}
+      <h3>${s?.name||sid}　${m+1}月${d}日</h3>
+      ${reqAlert}
+      ${SHIFTS.map(sh=>`<button class="shift-btn" onclick="setShift('${sid}',${d},'${sh}')" style="${curShift===sh?'background:#E6F1FB;border:1.5px solid #185FA5;font-weight:600':''}">${shiftIcon(sh)}&nbsp; ${sh}</button>`).join('')}
       <div class="sep2"></div>
       <button class="shift-btn" onclick="closeModal()" style="color:var(--txt2);background:#f5f5f5">キャンセル</button>
     </div>
   </div>`;
 }
 
-function shiftIcon(sh){return{日勤:'🌤',夜勤:'🌙','夜勤明け':'🌅',有給:'🌿',休み:'💤'}[sh]||'📝';}
+function shiftIcon(sh){return{'日勤':'🌤','A勤':'🌅','P勤':'🌇','夜勤':'🌙','夜勤明け':'🌄','有給':'🌿','休み':'💤','空白':'⬜'}[sh]||'📝';}
 
 function setShift(sid,d,sh){
   const y=S.aYr,m=S.aMo,k=sk(y,m);
@@ -1813,6 +1940,17 @@ function delStaff(sid){
   saveStaff();render();
 }
 
+function moveStaff(sid,dir){
+  const idx=S.staffList.findIndex(s=>s.id===sid);
+  if(idx<0)return;
+  const newIdx=idx+dir;
+  if(newIdx<0||newIdx>=S.staffList.length)return;
+  const tmp=S.staffList[idx];
+  S.staffList[idx]=S.staffList[newIdx];
+  S.staffList[newIdx]=tmp;
+  saveStaff();render();
+}
+
 function openWelfareEdit(sid){
   const y=S.aYr,m=S.aMo,wf=getWelfare(y,m,sid);
   const s=S.staffList.find(x=>x.id===sid);
@@ -1845,9 +1983,9 @@ function printPDF(){
   if(!schData){showFlash('勤務表がありません','ab');return;}
   const days=dim(y,m);
   const wl=['日','月','火','水','木','金','土'];
-  const shBg=sh=>({日勤:'#E6F1FB',夜勤:'#3C3489','夜勤明け':'#EF9F27',有給:'#EAF3DE',休み:'#F0F0F0'}[sh]||'#fff');
+  const shBg=sh=>({'日勤':'#E6F1FB','A勤':'#C8E6FA','P勤':'#B3D4F7','夜勤':'#3C3489','夜勤明け':'#EF9F27','有給':'#EAF3DE','休み':'#F0F0F0','空白':'#fff'}[sh]||'#fff');
   const shFg=sh=>({夜勤:'#EEEDFE','夜勤明け':'#2d1c00',日勤:'#0C447C',有給:'#27500A',休み:'#888'}[sh]||'#333');
-  const shLbl=sh=>({日勤:'日',夜勤:'夜','夜勤明け':'明',休み:'休',有給:'有'}[sh]||'');
+  const shLbl=sh=>({'日勤':'日','A勤':'A','P勤':'P','夜勤':'夜','夜勤明け':'明','休み':'休','有給':'有','空白':''}[sh]||'');
   function counts(sid){
     let ko=0,yu=0,ni=0,ya=0,ak=0;
     for(let d=1;d<=days;d++){
@@ -1912,7 +2050,6 @@ function printPDF(){
   </style>
   </head><body>
   <h2>🏥 ナーシングホーム　${y}年${m+1}月 勤務表</h2>
-  <p>作成日時：${new Date().toLocaleString('ja-JP')}　　パスワード: sakura2024</p>
   <div class="legend">
     <div class="leg"><div class="lb" style="background:#E6F1FB;border-color:#185FA5"></div>日=日勤</div>
     <div class="leg"><div class="lb" style="background:#3C3489"></div>夜=夜勤</div>

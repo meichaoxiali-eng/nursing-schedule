@@ -1192,7 +1192,7 @@ function getAllData(){
 
 // BIN IDとAPIキーを固定（全端末共通・入力不要）
 const FIXED_BIN_ID='6a1952a6ddf5aa59f77366cb';
-const FIXED_JB_KEY='$2a$10$Q5GqFQRtyNIXmd1rpIdmFOQOeixaXILaRgWLoZMmxEj98HZA/4TRS';
+const FIXED_JB_KEY='$2a$10$tG9jbP6Mg6EnxWFmy0S7PuwMly03dUX9HSPCcAjLsZyULFJEU6FLG';  // X-MASTER-KEY
 
 async function connectJSONBin(){
   const key=FIXED_JB_KEY;
@@ -1200,7 +1200,7 @@ async function connectJSONBin(){
   lsSet('jb_bin',FIXED_BIN_ID);
   setSyncStatus(false,'JSONBinに接続中...');
   try{
-    await pushJSONBin(key,FIXED_BIN_ID);
+    await pushJSONBin(FIXED_JB_KEY,FIXED_BIN_ID);
     setSyncStatus(true,'同期完了 ✓');
     showFlash('クラウド同期完了 ✓','gb');
     render();
@@ -1215,7 +1215,10 @@ async function pushJSONBin(key,binId){
   binId=FIXED_BIN_ID;
   const res=await fetch(`https://api.jsonbin.io/v3/b/${binId}`,{
     method:'PUT',
-    headers:{'Content-Type':'application/json','X-Access-Key':key},
+    headers:{
+      'Content-Type':'application/json',
+      'X-Master-Key':key
+    },
     body:JSON.stringify(getAllData())
   });
   if(!res.ok){const t=await res.text();throw new Error('更新失敗: '+res.status+' '+t);}
@@ -1227,7 +1230,10 @@ async function pullJSONBin(){
   setSyncStatus(false,'データを取得中...');
   try{
     const res=await fetch(`https://api.jsonbin.io/v3/b/${binId}/latest`,{
-      headers:{'X-Access-Key':key}
+      headers:{
+        'X-Master-Key':key,
+        'X-Bin-Meta':false
+      }
     });
     if(!res.ok){const t=await res.text();throw new Error('取得失敗: '+res.status+' '+t);}
     const j=await res.json();

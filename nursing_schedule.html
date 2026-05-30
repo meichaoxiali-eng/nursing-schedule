@@ -309,8 +309,7 @@ function saveReqs(y,m,sid,days){
   S.requests[k]=days;
   lsSet(k,days);
   broadcastUpdate(k,days);
-  const jbk=lsGet('jb_key');
-  if(jbk) setTimeout(()=>pushJSONBin(jbk,FIXED_BIN_ID).catch(()=>{}),800);
+  setTimeout(()=>pushJSONBin(FIXED_JB_KEY,FIXED_BIN_ID).catch(()=>{}),800);
 }
 function saveSch(y,m,data){
   const k=sk(y,m);
@@ -318,16 +317,14 @@ function saveSch(y,m,data){
   lsSet(k,data);
   broadcastUpdate(k,data);
   // 自動Gist同期
-  const jbk=lsGet('jb_key');
-  if(jbk) setTimeout(()=>pushJSONBin(jbk,FIXED_BIN_ID).catch(()=>{}),800);
+  setTimeout(()=>pushJSONBin(FIXED_JB_KEY,FIXED_BIN_ID).catch(()=>{}),800);
 }
 function saveStaff(){
   S.staffList.forEach(s=>{}); // validate
   lsSet('staffList',S.staffList);
   broadcastUpdate('staffList',S.staffList);
   // 自動Gist同期
-  const jbk=lsGet('jb_key');
-  if(jbk) setTimeout(()=>pushJSONBin(jbk,FIXED_BIN_ID).catch(()=>{}),800);
+  setTimeout(()=>pushJSONBin(FIXED_JB_KEY,FIXED_BIN_ID).catch(()=>{}),800);
 }
 function saveWelfare(y,m,sid,data){
   const k=wk(y,m,sid);
@@ -380,6 +377,8 @@ function loadAll(){
     else if(k.startsWith('shiftpref:')) S.shiftPrefs[k]=v;
   }
   setSyncStatus(true,'データ読み込み完了');
+  // 起動時に自動でクラウドから最新データを取得
+  setTimeout(()=>pullJSONBin(),1000);
   render();
 }
 
@@ -1160,17 +1159,13 @@ function renderWelfare(y,m){
 // ============================================================
 function renderDataMgmt(){
   const y=S.aYr,m=S.aMo;
-  const tok=lsGet('jb_key')||'';
-  const syncStatus=tok?`<div class="gb">✅ JSONBin同期設定済み</div>`
-    :`<div class="wb">⚠️ X-ACCESS-KEYを入力して「接続する」を押してください。</div>`;
+  const syncStatus=`<div class="gb">✅ クラウド同期有効（自動保存中）</div>`;
   const gid=FIXED_BIN_ID;
   return `<div class="card">
     <div class="card-t">☁️ クラウド同期（JSONBin）</div>
     ${syncStatus}
-    <div style="margin:10px 0 6px;font-size:12px;font-weight:600;color:var(--txt2)">X-ACCESS-KEY</div>
-    <input type="password" id="jb-key" value="${tok}" placeholder="$2a$10$..." style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;background:#fafafa;font-size:12px;margin-bottom:8px">
-    <button class="bp" onclick="connectJSONBin()" style="margin-top:0">☁️ 接続する / アップロード</button>
-    ${gid?`<button class="bs" onclick="pullJSONBin()" style="margin-top:6px">⬇️ 最新データを取得</button>`:''}
+    <button class="bp" onclick="connectJSONBin()" style="margin-top:0">☁️ アップロード（このデータを送信）</button>
+    <button class="bs" onclick="pullJSONBin()" style="margin-top:6px">⬇️ 最新データを取得</button>
     <div class="sep2" style="margin:14px 0"></div>
     <div class="card-t">📤 手動エクスポート／インポート</div>
     <button class="bs" onclick="exportData()" style="margin-top:0">📤 エクスポート（JSON）</button>
@@ -1195,17 +1190,16 @@ function getAllData(){
   return d;
 }
 
-// BIN IDを固定（全端末共通）
+// BIN IDとAPIキーを固定（全端末共通・入力不要）
 const FIXED_BIN_ID='6a1952a6ddf5aa59f77366cb';
+const FIXED_JB_KEY='$2a$10$Q5GqFQRtyNIXmd1rpIdmFOQOeixaXILaRgWLoZMmxEj98HZA/4TRS';
 
 async function connectJSONBin(){
-  const key=document.getElementById('jb-key')?.value?.trim();
-  if(!key){showFlash('X-ACCESS-KEYを入力してください','ab');return;}
+  const key=FIXED_JB_KEY;
   lsSet('jb_key',key);
   lsSet('jb_bin',FIXED_BIN_ID);
   setSyncStatus(false,'JSONBinに接続中...');
   try{
-    // 固定BINにデータをアップロード
     await pushJSONBin(key,FIXED_BIN_ID);
     setSyncStatus(true,'同期完了 ✓');
     showFlash('クラウド同期完了 ✓','gb');
@@ -1217,9 +1211,8 @@ async function connectJSONBin(){
 }
 
 async function pushJSONBin(key,binId){
-  key=key||lsGet('jb_key');
+  key=FIXED_JB_KEY;
   binId=FIXED_BIN_ID;
-  if(!key)return;
   const res=await fetch(`https://api.jsonbin.io/v3/b/${binId}`,{
     method:'PUT',
     headers:{'Content-Type':'application/json','X-Access-Key':key},
@@ -1229,10 +1222,8 @@ async function pushJSONBin(key,binId){
 }
 
 async function pullJSONBin(){
-  const key=lsGet('jb_key');
+  const key=FIXED_JB_KEY;
   const binId=FIXED_BIN_ID;
-  lsSet('jb_bin',binId);
-  if(!key){showFlash('X-ACCESS-KEYを入力してください','ab');return;}
   setSyncStatus(false,'データを取得中...');
   try{
     const res=await fetch(`https://api.jsonbin.io/v3/b/${binId}/latest`,{

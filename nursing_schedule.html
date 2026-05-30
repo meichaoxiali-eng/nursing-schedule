@@ -175,6 +175,92 @@ select.full{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3
   .st th,.st td{border:0.5px solid #999!important}
 }
 </style>
+<script type="module">
+// Firebase SDK
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getDatabase, ref, set, get, onValue } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyBOfCFDmkDqFqL2Uax_oB2wela-CqVAQy8",
+  authDomain: "nursing-schedule-234c9.firebaseapp.com",
+  databaseURL: "https://nursing-schedule-234c9-default-rtdb.firebaseio.com",
+  projectId: "nursing-schedule-234c9",
+  storageBucket: "nursing-schedule-234c9.firebasestorage.app",
+  messagingSenderId: "880351638679",
+  appId: "1:880351638679:web:c1621e2e082b9fcfb8a5d2"
+};
+
+const fbApp = initializeApp(firebaseConfig);
+const db = getDatabase(fbApp);
+
+// Firebase経由でデータを保存
+window.fbSet = async function(key, val){
+  try{
+    await set(ref(db, 'nursing/'+key.replace(/:/g,'__').replace(/\./g,'_')), val);
+  }catch(e){ console.log('fbSet error:',e.message); }
+};
+
+// Firebase経由でデータを取得
+window.fbGet = async function(key){
+  try{
+    const snap = await get(ref(db, 'nursing/'+key.replace(/:/g,'__').replace(/\./g,'_')));
+    return snap.exists() ? snap.val() : null;
+  }catch(e){ console.log('fbGet error:',e.message); return null; }
+};
+
+// 全データをFirebaseから取得
+window.fbPullAll = async function(){
+  try{
+    const snap = await get(ref(db, 'nursing'));
+    if(!snap.exists()) return null;
+    const raw = snap.val();
+    // キーを元に戻す（__→: / _→.）
+    const result = {};
+    Object.keys(raw).forEach(k=>{
+      const origKey = k.replace(/__/g,':').replace(/_dot_/g,'.');
+      result[origKey] = raw[k];
+    });
+    return result;
+  }catch(e){ console.log('fbPullAll error:',e.message); return null; }
+};
+
+// 全データをFirebaseに送信
+window.fbPushAll = async function(){
+  try{
+    const allData = {};
+    for(let i=0;i<localStorage.length;i++){
+      const k = localStorage.key(i);
+      if(!k||k.startsWith('jb_')||k.startsWith('gist_')) continue;
+      try{ allData[k.replace(/:/g,'__').replace(/\./g,'_dot_')] = JSON.parse(localStorage.getItem(k)); }catch(e){}
+    }
+    await set(ref(db, 'nursing'), allData);
+    return true;
+  }catch(e){ console.log('fbPushAll error:',e.message); return false; }
+};
+
+// リアルタイム監視（他端末が更新したら自動反映）
+let isLocalUpdate = false;
+window.fbWatch = function(){
+  onValue(ref(db, 'nursing'), (snap)=>{
+    if(isLocalUpdate){ isLocalUpdate=false; return; }
+    if(!snap.exists()) return;
+    const raw = snap.val();
+    const allData = {};
+    Object.keys(raw).forEach(k=>{
+      const origKey = k.replace(/__/g,':').replace(/_dot_/g,'.');
+      allData[origKey] = raw[k];
+    });
+    applyAllData(allData);
+    if(window.S) window.render();
+    const dot = document.getElementById('sync-dot');
+    const msg = document.getElementById('sync-msg');
+    if(dot) dot.className='sync-dot ok';
+    if(msg) msg.textContent='クラウド同期済み ✓ '+new Date().toLocaleTimeString('ja-JP');
+  });
+};
+
+window.fbSetLocalFlag = function(){ isLocalUpdate = true; };
+</script>
 </head>
 <body>
 <div class="app" id="app">
@@ -309,7 +395,7 @@ function saveReqs(y,m,sid,days){
   S.requests[k]=days;
   lsSet(k,days);
   broadcastUpdate(k,days);
-  setTimeout(()=>pushJSONBin(FIXED_JB_KEY,FIXED_BIN_ID).catch(()=>{}),800);
+  if(window.fbPushAll){if(window.fbSetLocalFlag)window.fbSetLocalFlag();setTimeout(()=>window.fbPushAll(),300);}
 }
 function saveSch(y,m,data){
   const k=sk(y,m);
@@ -377,9 +463,33 @@ function loadAll(){
     else if(k.startsWith('shiftpref:')) S.shiftPrefs[k]=v;
   }
   setSyncStatus(true,'データ読み込み完了');
-  // 起動時に自動でクラウドから最新データを取得
-  setTimeout(()=>pullJSONBin(),1000);
-  render();
+  render(); // まずローカルデータで表示
+  // Firebase監視開始・最新データ取得
+  setTimeout(async()=>{
+    if(window.fbWatch) window.fbWatch();
+    if(window.fbPullAll){
+      const allData = await window.fbPullAll();
+      if(allData) applyAllData(allData);
+      render();
+    }
+  },1500);
+}
+
+// Firebaseから取得したデータを適用
+function applyAllData(allData){
+  S.requests={};S.schedules={};S.welfareReqs={};
+  S.nenkyuBalance={};S.reqTypes={};S.shiftPrefs={};
+  Object.keys(allData).forEach(k=>{
+    const v=allData[k];
+    try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
+    if(k==='staffList'&&Array.isArray(v)) S.staffList=v;
+    else if(k.startsWith('req:')||k.startsWith('baitreq:')) S.requests[k]=v;
+    else if(k.startsWith('sch:')) S.schedules[k]=v;
+    else if(k.startsWith('wlf:')) S.welfareReqs[k]=v;
+    else if(k.startsWith('nenkyu:')) S.nenkyuBalance[k.replace('nenkyu:','')]=v;
+    else if(k.startsWith('rtype:')) S.reqTypes[k]=v;
+    else if(k.startsWith('shiftpref:')) S.shiftPrefs[k]=v;
+  });
 }
 
 function setSyncStatus(ok,msg){
@@ -1213,13 +1323,15 @@ async function connectJSONBin(){
 async function pushJSONBin(key,binId){
   key=FIXED_JB_KEY;
   binId=FIXED_BIN_ID;
-  const res=await fetch(`https://api.jsonbin.io/v3/b/${binId}`,{
+  const payload=getAllData();
+  if(!payload||Object.keys(payload).length===0) return; // 空データは送らない
+  const res=await fetch('https://api.jsonbin.io/v3/b/'+binId,{
     method:'PUT',
     headers:{
       'Content-Type':'application/json',
       'X-Master-Key':key
     },
-    body:JSON.stringify(getAllData())
+    body:JSON.stringify(payload)
   });
   if(!res.ok){const t=await res.text();throw new Error('更新失敗: '+res.status+' '+t);}
 }
@@ -1229,25 +1341,39 @@ async function pullJSONBin(){
   const binId=FIXED_BIN_ID;
   setSyncStatus(false,'データを取得中...');
   try{
-    const res=await fetch(`https://api.jsonbin.io/v3/b/${binId}/latest`,{
+    const res=await fetch('https://api.jsonbin.io/v3/b/'+binId+'/latest',{
+      method:'GET',
       headers:{
-        'X-Master-Key':key,
-        'X-Bin-Meta':false
+        'X-Master-Key':key
       }
     });
-    if(!res.ok){const t=await res.text();throw new Error('取得失敗: '+res.status+' '+t);}
+    if(!res.ok){
+      const t=await res.text();
+      // 起動時の自動取得失敗は静かに無視（ローカルデータを使用）
+      setSyncStatus(true,'ローカルデータを使用中');
+      return;
+    }
     const j=await res.json();
-    const allData=j.record;
-    if(!allData)throw new Error('データが空です');
+    // JSONBinのレスポンスは j.record または j 直接の場合がある
+    const allData=j.record||j;
+    if(!allData||typeof allData!=='object'||Object.keys(allData).length===0){
+      setSyncStatus(true,'ローカルデータを使用中');
+      return;
+    }
+    // _init だけのデータ（初期化用）は無視
+    if(Object.keys(allData).length===1&&allData._init){
+      setSyncStatus(true,'ローカルデータを使用中');
+      return;
+    }
 
-    // 状態をリセット
+    // 状態をリセットしてから反映
     S.requests={};S.schedules={};S.welfareReqs={};
     S.nenkyuBalance={};S.reqTypes={};S.shiftPrefs={};
 
     Object.keys(allData).forEach(k=>{
       const v=allData[k];
       try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
-      if(k==='staffList') S.staffList=Array.isArray(v)?v:[...DEFAULT_STAFF];
+      if(k==='staffList'&&Array.isArray(v)) S.staffList=v;
       else if(k.startsWith('req:')||k.startsWith('baitreq:')) S.requests[k]=v;
       else if(k.startsWith('sch:')) S.schedules[k]=v;
       else if(k.startsWith('wlf:')) S.welfareReqs[k]=v;
@@ -1255,12 +1381,35 @@ async function pullJSONBin(){
       else if(k.startsWith('rtype:')) S.reqTypes[k]=v;
       else if(k.startsWith('shiftpref:')) S.shiftPrefs[k]=v;
     });
-    setSyncStatus(true,'取得完了 ✓ '+new Date().toLocaleTimeString('ja-JP'));
-    showFlash('最新データを取得しました ✓','gb');
+    setSyncStatus(true,'同期済み ✓ '+new Date().toLocaleTimeString('ja-JP'));
     render();
   }catch(e){
-    setSyncStatus(false,'取得エラー: '+e.message);
-    showFlash('取得エラー: '+e.message,'ab');
+    // エラーは静かに処理（ローカルデータを保持）
+    setSyncStatus(true,'ローカルデータを使用中');
+    console.log('pull error:',e.message);
+  }
+}
+
+async function manualPush(){
+  if(!window.fbPushAll){showFlash('Firebase未接続','ab');return;}
+  setSyncStatus(false,'アップロード中...');
+  const ok=await window.fbPushAll();
+  if(ok){setSyncStatus(true,'アップロード完了 ✓');showFlash('アップロード完了 ✓','gb');}
+  else{setSyncStatus(false,'エラー');showFlash('アップロード失敗','ab');}
+}
+
+async function manualPull(){
+  if(!window.fbPullAll){showFlash('Firebase未接続','ab');return;}
+  setSyncStatus(false,'取得中...');
+  const allData=await window.fbPullAll();
+  if(allData){
+    applyAllData(allData);
+    render();
+    setSyncStatus(true,'取得完了 ✓ '+new Date().toLocaleTimeString('ja-JP'));
+    showFlash('最新データを取得しました ✓','gb');
+  }else{
+    setSyncStatus(false,'データなし');
+    showFlash('クラウドにデータがありません','wb');
   }
 }
 

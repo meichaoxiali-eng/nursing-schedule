@@ -2065,10 +2065,9 @@ function printPDF(){
   if(!schData){showFlash('勤務表がありません','ab');return;}
   const days=dim(y,m);
   const wl=['日','月','火','水','木','金','土'];
-
-  function shBg(sh){return{'日勤':'#E6F1FB','A勤':'#C8E6FA','P勤':'#B3D4F7','夜勤':'#3C3489','夜勤明け':'#EF9F27','有給':'#EAF3DE','休み':'#F0F0F0','空白':'#fff'}[sh]||'#fff';}
-  function shFg(sh){return{'夜勤':'#EEEDFE','夜勤明け':'#2d1c00','日勤':'#0C447C','A勤':'#0C447C','P勤':'#0C447C','有給':'#27500A','休み':'#888'}[sh]||'#333';}
-  function shLbl(sh){return{'日勤':'日','A勤':'A','P勤':'P','夜勤':'夜','夜勤明け':'明','休み':'休','有給':'有','空白':''}[sh]||'';}
+  const shBg=sh=>({'日勤':'#E6F1FB','A勤':'#C8E6FA','P勤':'#B3D4F7','夜勤':'#3C3489','夜勤明け':'#EF9F27','有給':'#EAF3DE','休み':'#F0F0F0','空白':'#fff'}[sh]||'#fff');
+  const shFg=sh=>({'夜勤':'#EEEDFE','夜勤明け':'#2d1c00','日勤':'#0C447C','A勤':'#0C447C','P勤':'#0C447C','有給':'#27500A','休み':'#888'}[sh]||'#333');
+  const shLbl=sh=>({'日勤':'日','A勤':'A','P勤':'P','夜勤':'夜','夜勤明け':'明','休み':'休','有給':'有','空白':''}[sh]||'');
 
   function counts(sid){
     let ko=0,yu=0,ni=0,ya=0,ak=0;
@@ -2083,17 +2082,14 @@ function printPDF(){
   const viols=(schData['_violations']||{});
   const dayArr=Array.from({length:days},(_,i)=>S.staffList.filter(s=>(schData[s.id]||{})[i+1]==='日勤'||(schData[s.id]||{})[i+1]==='A勤'||(schData[s.id]||{})[i+1]==='P勤').length);
 
-  // セル幅を計算（日数に応じて自動調整）
-  const cellW = Math.max(14, Math.floor(220/days));
-
   const headers=Array.from({length:days},(_,i)=>{
     const d=i+1,w=dow(y,m,d),hol=isHoliday(y,m,d);
     const bg=w===6?'#185FA5':(w===0||hol)?'#A32D2D':'#e0e0e0';
     const fc=w===6||w===0||hol?'#fff':'#333';
-    return `<th style="border:0.5px solid #bbb;width:${cellW}px;font-size:7px;padding:1px;text-align:center;background:${bg};color:${fc};-webkit-print-color-adjust:exact;print-color-adjust:exact">${d}<br>${wl[w]}</th>`;
+    return `<th style="border:0.5px solid #bbb;width:18px;font-size:7px;padding:1px;text-align:center;background:${bg};color:${fc};-webkit-print-color-adjust:exact;print-color-adjust:exact">${d}<br>${wl[w]}</th>`;
   }).join('');
 
-  const countH=`<th style="border:0.5px solid #bbb;font-size:7px;padding:1px;text-align:center;background:#ddd;width:16px">休</th><th style="border:0.5px solid #bbb;font-size:7px;padding:1px;text-align:center;background:#ddd;width:16px">有</th><th style="border:0.5px solid #bbb;font-size:7px;padding:1px;text-align:center;background:#ddd;width:16px">日</th><th style="border:0.5px solid #bbb;font-size:7px;padding:1px;text-align:center;background:#ddd;width:16px">夜</th><th style="border:0.5px solid #bbb;font-size:7px;padding:1px;text-align:center;background:#ddd;width:16px">明</th>`;
+  const countH=`<th style="border:0.5px solid #bbb;font-size:7px;padding:1px;text-align:center;background:#ddd;width:14px">休</th><th style="border:0.5px solid #bbb;font-size:7px;padding:1px;text-align:center;background:#ddd;width:14px">有</th><th style="border:0.5px solid #bbb;font-size:7px;padding:1px;text-align:center;background:#ddd;width:14px">日</th><th style="border:0.5px solid #bbb;font-size:7px;padding:1px;text-align:center;background:#ddd;width:14px">夜</th><th style="border:0.5px solid #bbb;font-size:7px;padding:1px;text-align:center;background:#ddd;width:14px">明</th>`;
 
   let prevType='';
   const rows=S.staffList.map(s=>{
@@ -2101,31 +2097,30 @@ function printPDF(){
     const ct=counts(s.id);
     let spacer='';
     if(prevType==='nurse'&&s.type==='care'){
-      spacer=`<tr><td colspan="${days+6}" style="height:4px;border:none;background:#f5f5f5"></td></tr>`;
+      spacer=`<tr><td colspan="${days+6}" style="height:3px;border:none;background:#f5f5f5"></td></tr>`;
     }
     prevType=s.type;
     const cells=Array.from({length:days},(_,i)=>{
       const d=i+1,sh=(schData[s.id]||{})[d]||'';
       const w=dow(y,m,d),hol=isHoliday(y,m,d);
       const isV=viols[s.id]&&viols[s.id][d];
-      const colBg=w===6?'rgba(24,95,165,.08)':(w===0||hol)?'rgba(163,45,45,.08)':'';
+      const colBg=w===6?'rgba(24,95,165,.1)':(w===0||hol)?'rgba(163,45,45,.1)':'';
       const bg=isV?'#FFD6E0':sh?shBg(sh):colBg||'#fff';
-      const fg=sh?shFg(sh):'#999';
-      return `<td style="border:0.5px solid #bbb;width:${cellW}px;height:16px;text-align:center;font-size:8px;background:${bg};color:${fg};font-weight:700;-webkit-print-color-adjust:exact;print-color-adjust:exact">${shLbl(sh)}</td>`;
+      return `<td style="border:0.5px solid #bbb;width:18px;height:16px;text-align:center;font-size:7px;background:${bg};color:${shFg(sh)};font-weight:700;-webkit-print-color-adjust:exact;print-color-adjust:exact">${shLbl(sh)}</td>`;
     }).join('');
     return spacer+`<tr>
-      <td style="border:0.5px solid #bbb;padding:1px 3px;font-size:8px;white-space:nowrap;border-left:3px solid ${tcol};min-width:65px;max-width:85px;overflow:hidden;-webkit-print-color-adjust:exact;print-color-adjust:exact">${s.name}</td>
+      <td style="border:0.5px solid #bbb;padding:1px 3px;font-size:8px;white-space:nowrap;border-left:3px solid ${tcol};min-width:65px;-webkit-print-color-adjust:exact;print-color-adjust:exact">${s.name}</td>
       ${cells}
-      <td style="border:0.5px solid #bbb;text-align:center;font-size:8px;background:#f9f9f9;width:16px">${ct.ko}</td>
-      <td style="border:0.5px solid #bbb;text-align:center;font-size:8px;background:#f9f9f9;width:16px">${ct.yu}</td>
-      <td style="border:0.5px solid #bbb;text-align:center;font-size:8px;background:#f9f9f9;width:16px">${ct.ni}</td>
-      <td style="border:0.5px solid #bbb;text-align:center;font-size:8px;background:#f9f9f9;width:16px">${ct.ya}</td>
-      <td style="border:0.5px solid #bbb;text-align:center;font-size:8px;background:#f9f9f9;width:16px">${ct.ak}</td>
+      <td style="border:0.5px solid #bbb;text-align:center;font-size:8px;background:#f9f9f9;width:14px">${ct.ko}</td>
+      <td style="border:0.5px solid #bbb;text-align:center;font-size:8px;background:#f9f9f9;width:14px">${ct.yu}</td>
+      <td style="border:0.5px solid #bbb;text-align:center;font-size:8px;background:#f9f9f9;width:14px">${ct.ni}</td>
+      <td style="border:0.5px solid #bbb;text-align:center;font-size:8px;background:#f9f9f9;width:14px">${ct.ya}</td>
+      <td style="border:0.5px solid #bbb;text-align:center;font-size:8px;background:#f9f9f9;width:14px">${ct.ak}</td>
     </tr>`;
   }).join('');
 
   const dayCntRow=`<tr>
-    <td style="border:0.5px solid #bbb;padding:1px 3px;font-size:8px;background:#e8e8e8;font-weight:700;border-left:3px solid #999">日勤人数</td>
+    <td style="border:0.5px solid #bbb;padding:1px 3px;font-size:8px;background:#e8e8e8;font-weight:700">日勤人数</td>
     ${dayArr.map((cnt,i)=>{
       const d=i+1,w=dow(y,m,d),hol=isHoliday(y,m,d);
       const minDay=(w===3||w===6||w===0||hol)?4:5;
@@ -2135,30 +2130,20 @@ function printPDF(){
     <td colspan="5" style="border:0.5px solid #bbb;background:#e8e8e8"></td>
   </tr>`;
 
-  const htmlContent=`<!DOCTYPE html><html><head><meta charset="utf-8">
+  const win=window.open('','_blank');
+  win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8">
   <title>${y}年${m+1}月 勤務表</title>
   <style>
-    @page{size:A4 landscape;margin:6mm}
-    *{-webkit-print-color-adjust:exact;print-color-adjust:exact;box-sizing:border-box}
-    html{zoom:1}
-    body{
-      font-family:'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif;
-      margin:0;padding:0;
-      width:100%;
-    }
-    .wrap{width:100%;padding:2mm}
-    h2{font-size:12px;margin:0 0 3px;font-weight:700}
-    .legend{display:flex;gap:6px;margin-bottom:4px;font-size:7px;flex-wrap:wrap;align-items:center}
-    .leg{display:flex;align-items:center;gap:2px}
-    .lb{width:10px;height:10px;border-radius:2px;border:0.5px solid #bbb;display:inline-block;flex-shrink:0}
-    table{border-collapse:collapse;width:100%}
-    @media print{
-      body{margin:0}
-      .wrap{padding:0}
-    }
+    @page{size:A4 landscape;margin:8mm}
+    *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    body{font-family:'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif;margin:0;font-size:9px}
+    h2{font-size:13px;margin:0 0 5px;font-weight:700;color:#1a1a1a}
+    .legend{display:flex;gap:10px;margin-bottom:5px;font-size:8px;flex-wrap:wrap;align-items:center}
+    .leg{display:flex;align-items:center;gap:3px}
+    .lb{width:11px;height:11px;border-radius:2px;border:0.5px solid #bbb;display:inline-block}
+    table{border-collapse:collapse}
   </style>
   </head><body>
-  <div class="wrap">
   <h2>🏥 ナーシングホーム　${y}年${m+1}月 勤務表</h2>
   <div class="legend">
     <div class="leg"><div class="lb" style="background:#E6F1FB;border-color:#185FA5"></div>日=日勤</div>
@@ -2179,25 +2164,11 @@ function printPDF(){
     </tr></thead>
     <tbody>${rows}${dayCntRow}</tbody>
   </table>
-  </div>
-  </body></html>`;
-
-  // Blobを使ってPDFとしてダウンロード
-  const blob=new Blob([htmlContent],{type:'text/html;charset=utf-8'});
-  const url=URL.createObjectURL(blob);
-  const win=window.open(url,'_blank');
-  if(win){
-    win.onload=()=>{
-      setTimeout(()=>{
-        win.print();
-      },500);
-    };
-  }
-  // 印刷ダイアログで「PDFに保存」を選ぶよう案内
-  setTimeout(()=>{
-    showFlash('印刷ダイアログで「PDFに保存」を選んでください','ib');
-  },1000);
+  </body></html>`);
+  win.document.close();
+  setTimeout(()=>win.print(),500);
 }
+
 document.addEventListener('DOMContentLoaded', function(){ loadAll(); });
 </script>
 </body>

@@ -175,92 +175,6 @@ select.full{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3
   .st th,.st td{border:0.5px solid #999!important}
 }
 </style>
-<script type="module">
-// Firebase SDK
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getDatabase, ref, set, get, onValue } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
-
-const firebaseConfig = {
-  apiKey: "AIzaSyBOfCFDmkDqFqL2Uax_oB2wela-CqVAQy8",
-  authDomain: "nursing-schedule-234c9.firebaseapp.com",
-  databaseURL: "https://nursing-schedule-234c9-default-rtdb.firebaseio.com",
-  projectId: "nursing-schedule-234c9",
-  storageBucket: "nursing-schedule-234c9.firebasestorage.app",
-  messagingSenderId: "880351638679",
-  appId: "1:880351638679:web:c1621e2e082b9fcfb8a5d2"
-};
-
-const fbApp = initializeApp(firebaseConfig);
-const db = getDatabase(fbApp);
-
-// Firebase経由でデータを保存
-window.fbSet = async function(key, val){
-  try{
-    await set(ref(db, 'nursing/'+key.replace(/:/g,'__').replace(/\./g,'_')), val);
-  }catch(e){ console.log('fbSet error:',e.message); }
-};
-
-// Firebase経由でデータを取得
-window.fbGet = async function(key){
-  try{
-    const snap = await get(ref(db, 'nursing/'+key.replace(/:/g,'__').replace(/\./g,'_')));
-    return snap.exists() ? snap.val() : null;
-  }catch(e){ console.log('fbGet error:',e.message); return null; }
-};
-
-// 全データをFirebaseから取得
-window.fbPullAll = async function(){
-  try{
-    const snap = await get(ref(db, 'nursing'));
-    if(!snap.exists()) return null;
-    const raw = snap.val();
-    // キーを元に戻す（__→: / _→.）
-    const result = {};
-    Object.keys(raw).forEach(k=>{
-      const origKey = k.replace(/__/g,':').replace(/_dot_/g,'.');
-      result[origKey] = raw[k];
-    });
-    return result;
-  }catch(e){ console.log('fbPullAll error:',e.message); return null; }
-};
-
-// 全データをFirebaseに送信
-window.fbPushAll = async function(){
-  try{
-    const allData = {};
-    for(let i=0;i<localStorage.length;i++){
-      const k = localStorage.key(i);
-      if(!k||k.startsWith('jb_')||k.startsWith('gist_')) continue;
-      try{ allData[k.replace(/:/g,'__').replace(/\./g,'_dot_')] = JSON.parse(localStorage.getItem(k)); }catch(e){}
-    }
-    await set(ref(db, 'nursing'), allData);
-    return true;
-  }catch(e){ console.log('fbPushAll error:',e.message); return false; }
-};
-
-// リアルタイム監視（他端末が更新したら自動反映）
-let isLocalUpdate = false;
-window.fbWatch = function(){
-  onValue(ref(db, 'nursing'), (snap)=>{
-    if(isLocalUpdate){ isLocalUpdate=false; return; }
-    if(!snap.exists()) return;
-    const raw = snap.val();
-    const allData = {};
-    Object.keys(raw).forEach(k=>{
-      const origKey = k.replace(/__/g,':').replace(/_dot_/g,'.');
-      allData[origKey] = raw[k];
-    });
-    applyAllData(allData);
-    if(window.S) window.render();
-    const dot = document.getElementById('sync-dot');
-    const msg = document.getElementById('sync-msg');
-    if(dot) dot.className='sync-dot ok';
-    if(msg) msg.textContent='クラウド同期済み ✓ '+new Date().toLocaleTimeString('ja-JP');
-  });
-};
-
-window.fbSetLocalFlag = function(){ isLocalUpdate = true; };
-</script>
 </head>
 <body>
 <div class="app" id="app">
@@ -395,7 +309,6 @@ function saveReqs(y,m,sid,days){
   S.requests[k]=days;
   lsSet(k,days);
   broadcastUpdate(k,days);
-  if(window.fbPushAll){if(window.fbSetLocalFlag)window.fbSetLocalFlag();setTimeout(()=>window.fbPushAll(),300);}
 }
 function saveSch(y,m,data){
   const k=sk(y,m);
@@ -463,16 +376,7 @@ function loadAll(){
     else if(k.startsWith('shiftpref:')) S.shiftPrefs[k]=v;
   }
   setSyncStatus(true,'データ読み込み完了');
-  render(); // まずローカルデータで表示
-  // Firebase監視開始・最新データ取得
-  setTimeout(async()=>{
-    if(window.fbWatch) window.fbWatch();
-    if(window.fbPullAll){
-      const allData = await window.fbPullAll();
-      if(allData) applyAllData(allData);
-      render();
-    }
-  },1500);
+  render();
 }
 
 // Firebaseから取得したデータを適用
@@ -2294,4 +2198,7 @@ function printPDF(){
     showFlash('印刷ダイアログで「PDFに保存」を選んでください','ib');
   },1000);
 }
-
+document.addEventListener('DOMContentLoaded', function(){ loadAll(); });
+</script>
+</body>
+</html>

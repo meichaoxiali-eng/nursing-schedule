@@ -1176,12 +1176,21 @@ function renderWelfare(y,m){
 // ============================================================
 function renderDataMgmt(){
   const y=S.aYr,m=S.aMo;
-  const syncStatus=`<div class="gb">✅ クラウド同期有効（自動保存中）</div>`;
-  const gid=FIXED_BIN_ID;
+  const testMode=lsGet('test_mode');
   return `<div class="card">
-    <div class="card-t">☁️ クラウド同期（JSONBin）</div>
-    ${syncStatus}
-    <button class="bp" onclick="connectJSONBin()" style="margin-top:0">☁️ アップロード（このデータを送信）</button>
+    <div class="card-t">🧪 テストモード</div>
+    <div class="${testMode?'gb':'wb'}" style="margin-bottom:8px">
+      ${testMode?'🟢 テストモード有効中：入力期間制限が解除されています':'⚪ テストモード無効：通常の入力期間制限が適用されています'}
+    </div>
+    <button onclick="toggleTestMode()" style="width:100%;padding:10px;background:${testMode?'#A32D2D':'#3B6D11'};color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;margin-bottom:4px">
+      ${testMode?'🔴 テストモードを終了する':'🟢 テストモードを開始する'}
+    </button>
+    <div style="font-size:10px;color:var(--txt3);margin-bottom:12px">※テスト完了後は必ず終了してください</div>
+  </div>
+  <div class="card">
+    <div class="card-t">☁️ クラウド同期</div>
+    <div class="gb">✅ クラウド同期有効（自動保存中）</div>
+    <button class="bp" onclick="connectJSONBin()" style="margin-top:8px">☁️ アップロード（このデータを送信）</button>
     <button class="bs" onclick="pullJSONBin()" style="margin-top:6px">⬇️ 最新データを取得</button>
     <div class="sep2" style="margin:14px 0"></div>
     <div class="card-t">📤 手動エクスポート／インポート</div>
@@ -1195,6 +1204,18 @@ function renderDataMgmt(){
       ${y}年${m+1}月のデータを削除
     </button>
   </div>`;
+}
+
+function toggleTestMode(){
+  const cur=lsGet('test_mode');
+  if(cur){
+    localStorage.removeItem('test_mode');
+    showFlash('テストモードを終了しました','wb');
+  } else {
+    lsSet('test_mode',true);
+    showFlash('テストモードを開始しました','gb');
+  }
+  render();
 }
 
 // ── JSONBin同期関数 ──

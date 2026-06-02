@@ -587,6 +587,19 @@ function renderStaff(){
       </div>`;
     }
 
+    // 希望休を送信ボタン（スタッフ用）
+    if(staff.type!=='bait'){
+      h+=`<div class="card" style="margin-top:8px;border:1.5px solid #3B6D11">
+        <div class="card-t" style="color:#27500A">📨 希望休の送信</div>
+        <div style="background:#EAF3DE;border-left:3px solid #3B6D11;border-radius:6px;padding:8px 10px;font-size:11px;color:#27500A;margin-bottom:10px;line-height:1.6">
+          希望休の入力が完了したら「希望休を送信」ボタンを押してください。<br>管理者にデータが送られます。
+        </div>
+        <button onclick="sendRequest('${sid}')" style="width:100%;padding:12px;background:#3B6D11;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer">
+          📨 希望休を送信
+        </button>
+      </div>`;
+    }
+
     // 福利厚生
     h+=`<div class="welfare-box">
       <h4>🌸 福利厚生休暇について</h4>
@@ -675,6 +688,43 @@ function confirmReq(day,type){
 
 function closeReqModal(){
   document.getElementById('modal-area').innerHTML='';render();
+}
+
+async function sendRequest(sid){
+  const staff=S.staffList.find(s=>s.id===sid);
+  if(!staff)return;
+  const y=S.yr,m=S.mo;
+  const reqs=getReqs(y,m,sid);
+  // データをエクスポートしてJSONBinにアップロード
+  setSyncStatus(false,'送信中...');
+  try{
+    await pushJSONBin(FIXED_JB_KEY,FIXED_BIN_ID);
+    setSyncStatus(true,'送信完了 ✓');
+    // 送信完了モーダル表示
+    document.getElementById('modal-area').innerHTML=`
+    <div class="modal-bg" onclick="closeModal()">
+      <div class="modal" onclick="event.stopPropagation()">
+        <div style="text-align:center;padding:10px 0">
+          <div style="font-size:48px;margin-bottom:12px">📨</div>
+          <h3 style="font-size:16px;font-weight:600;margin-bottom:8px">送信完了しました</h3>
+          <div style="background:#EAF3DE;border-radius:10px;padding:12px 16px;font-size:13px;color:#27500A;margin-bottom:16px;line-height:1.6">
+            ${staff.name}さんの希望休を管理者に送信しました。<br>
+            <strong>${m+1}月の希望休：${reqs.length}日</strong>
+            ${reqs.length>0?'（'+reqs.join('日、')+'日）':''}
+          </div>
+          <div style="font-size:12px;color:#666;margin-bottom:16px">
+            管理者が確認します。変更がある場合は再度送信してください。
+          </div>
+          <button onclick="closeModal()" style="width:100%;padding:12px;background:#185FA5;color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer">
+            閉じる
+          </button>
+        </div>
+      </div>
+    </div>`;
+  }catch(e){
+    setSyncStatus(false,'送信エラー');
+    showFlash('送信に失敗しました。もう一度お試しください。','ab');
+  }
 }
 
 function submitShiftPref(){

@@ -463,7 +463,7 @@ function renderStaff(){
     const sorted=[...reqs].sort((a,b)=>a-b);
     let streak=0,maxS=0,cur=0;
     for(let i=1;i<sorted.length;i++){if(sorted[i]===sorted[i-1]+1){cur++;maxS=Math.max(maxS,cur);}else cur=0;}
-    if(maxS>=2) h+=`<div class="ab">⚠️ 3日以上連続の希望休があります。管理者に事前相談が必要です。</div>`;
+    if(maxS>=3) h+=`<div class="ab">⚠️ 3日以上連続の希望休があります。管理者に事前相談が必要です。</div>`;
 
     h+=`<div class="mn">
       <button onclick="chgMo(-1)">‹</button>

@@ -409,7 +409,10 @@ function setSyncStatus(ok,msg){
 // ============================================================
 function dim(y,m){return new Date(y,m+1,0).getDate();}
 function dow(y,m,d){return new Date(y,m,d).getDay();}
-function isInputPeriod(){const d=new Date().getDate();return d>=INPUT_START&&d<=INPUT_END;}
+function isInputPeriod(){
+  if(lsGet('test_mode')) return true; // テストモード中は常にtrue
+  const d=new Date().getDate();return d>=INPUT_START&&d<=INPUT_END;
+}
 
 function showTab(t){
   S.tab=t;
@@ -1315,6 +1318,18 @@ async function manualPull(){
     setSyncStatus(false,'データなし');
     showFlash('クラウドにデータがありません','wb');
   }
+}
+
+function toggleTestMode(){
+  const cur=lsGet('test_mode');
+  if(cur){
+    localStorage.removeItem('test_mode');
+    showFlash('テストモードを終了しました','wb');
+  } else {
+    lsSet('test_mode',true);
+    showFlash('テストモードを開始しました。入力期間制限が解除されています','gb');
+  }
+  render();
 }
 
 function exportData(){

@@ -234,7 +234,7 @@ const DEFAULT_STAFF=[
   {id:'bait-m',name:'バイトM（看護）',type:'bait',nightOk:true,weekendOff:false,nightMax:4,dayOnly:false,nightCenter:false,nightOnly:true,isKanri:false},
   {id:'bait-n',name:'バイトN（看護）',type:'bait',nightOk:true,weekendOff:false,nightMax:2,dayOnly:false,nightCenter:false,nightOnly:true,isKanri:false},
   {id:'bait-o',name:'バイトO（看護）',type:'bait',nightOk:true,weekendOff:false,nightMax:2,dayOnly:false,nightCenter:false,nightOnly:true,isKanri:false},
-  {id:'kanri-care',name:'管理者（介護）',type:'care',nightOk:false,weekendOff:true,nightMax:0,dayOnly:true,nightCenter:false,nightOnly:false,isKanri:true},
+  {id:'kanri-care',name:'管理者（介護）',type:'care',nightOk:false,weekendOff:true,nightMax:0,dayOnly:true,nightCenter:false,nightOnly:false,isKanri:true,empType:'B'},
   {id:'nightonly-g',name:'夜勤専従G（介護）',type:'care',nightOk:true,weekendOff:false,nightMax:11,dayOnly:false,nightCenter:true,nightOnly:false,isKanri:false,empType:'A'},
   {id:'nightonly-h',name:'夜勤専従H（介護）',type:'care',nightOk:true,weekendOff:false,nightMax:11,dayOnly:false,nightCenter:true,nightOnly:false,isKanri:false,empType:'A'},
   {id:'sabikan-j',name:'サビ管J（介護）',type:'care',nightOk:true,weekendOff:false,nightMax:5,dayOnly:false,nightCenter:false,nightOnly:false,isKanri:false,empType:'A'},
@@ -317,14 +317,14 @@ function saveSch(y,m,data){
   lsSet(k,data);
   broadcastUpdate(k,data);
   // 自動Gist同期
-  setTimeout(()=>pushJSONBin(FIXED_JB_KEY,FIXED_BIN_ID).catch(()=>{}),800);
+  if(lsGet('gh_token')) setTimeout(()=>pushToGitHub(),1000);
 }
 function saveStaff(){
   S.staffList.forEach(s=>{}); // validate
   lsSet('staffList',S.staffList);
   broadcastUpdate('staffList',S.staffList);
   // 自動Gist同期
-  setTimeout(()=>pushJSONBin(FIXED_JB_KEY,FIXED_BIN_ID).catch(()=>{}),800);
+  if(lsGet('gh_token')) setTimeout(()=>pushToGitHub(),1000);
 }
 function saveWelfare(y,m,sid,data){
   const k=wk(y,m,sid);
@@ -377,7 +377,55 @@ function loadAll(){
     else if(k.startsWith('shiftpref:')) S.shiftPrefs[k]=v;
   }
   setSyncStatus(true,'データ読み込み完了');
-  render();
+  initStaffMonth();
+  render(); // まずローカルデータで表示
+  // 起動時に自動でJSONBinから最新データを取得
+  autoSyncOnLoad();
+}
+
+async function autoSyncOnLoad(){
+  try{
+    // GitHubのdata.jsonから直接取得（キャッシュ回避）
+    const res=await fetch(GH_DATA_URL+'?t='+Date.now());
+    if(!res.ok) return;
+    const allData=await res.json();
+    if(!allData||typeof allData!=='object'||Object.keys(allData).length<=1) return;
+    applyAllData(allData);
+    setSyncStatus(true,'同期済み ✓ '+new Date().toLocaleTimeString('ja-JP'));
+    render();
+  }catch(e){
+    console.log('auto sync error:',e.message);
+  }
+}
+
+// GitHub Actionsでdata.jsonを更新する
+async function pushToGitHub(){
+  try{
+    const allData={};
+    for(let i=0;i<localStorage.length;i++){
+      const k=localStorage.key(i);
+      if(!k||k.startsWith('jb_')||k.startsWith('gist_')) continue;
+      try{allData[k]=JSON.parse(localStorage.getItem(k));}catch(e){}
+    }
+    // repository_dispatchでGitHub Actionsをトリガー
+    const res=await fetch(GH_API_URL,{
+      method:'POST',
+      headers:{
+        'Content-Type':'application/json',
+        'Accept':'application/vnd.github.v3+json',
+        'Authorization':'token '+lsGet('gh_token')
+      },
+      body:JSON.stringify({
+        event_type:'sync-data',
+        client_payload:{data:JSON.stringify(allData)}
+      })
+    });
+    if(res.status===204){
+      setSyncStatus(true,'クラウド保存中...');
+    }
+  }catch(e){
+    console.log('push error:',e.message);
+  }
 }
 
 // Firebaseから取得したデータを適用
@@ -412,7 +460,23 @@ function dim(y,m){return new Date(y,m+1,0).getDate();}
 function dow(y,m,d){return new Date(y,m,d).getDay();}
 function isInputPeriod(){
   if(lsGet('test_mode')) return true; // テストモード中は常にtrue
-  const d=new Date().getDate();return d>=INPUT_START&&d<=INPUT_END;
+  const today=new Date();
+  const d=today.getDate();
+  const inPeriod=d>=INPUT_START&&d<=INPUT_END;
+  if(!inPeriod) return false;
+  // 表示中の月が翌月かどうか確認
+  const nextM=today.getMonth()===11?0:today.getMonth()+1;
+  const nextY=today.getMonth()===11?today.getFullYear()+1:today.getFullYear();
+  return S.yr===nextY&&S.mo===nextM;
+}
+
+// スタッフ画面の初期月を翌月に設定（入力期間中のみ）
+function initStaffMonth(){
+  if(isInputPeriod()){
+    const today=new Date();
+    if(today.getMonth()===11){S.mo=0;S.yr=today.getFullYear()+1;}
+    else{S.mo=today.getMonth()+1;S.yr=today.getFullYear();}
+  }
 }
 
 function showTab(t){
@@ -466,10 +530,14 @@ function renderStaff(){
     for(let i=1;i<sorted.length;i++){if(sorted[i]===sorted[i-1]+1){cur++;maxS=Math.max(maxS,cur);}else cur=0;}
     if(maxS>=3) h+=`<div class="ab">⚠️ 3日以上連続の希望休があります。管理者に事前相談が必要です。</div>`;
 
+    const today2=new Date();
+    const curM2=today2.getMonth(),curY2=today2.getFullYear();
+    const isNextMonth=(y===( curM2===11?curY2+1:curY2)&&m===(curM2===11?0:curM2+1));
+    const isCurMonth=(y===curY2&&m===curM2);
     h+=`<div class="mn">
-      <button onclick="chgMo(-1)">‹</button>
-      <span>${y}年${m+1}月</span>
-      <button onclick="chgMo(1)">›</button>
+      <button onclick="chgMo(-1)" style="${isCurMonth?'opacity:0.3;cursor:default':''}">‹</button>
+      <span>${y}年${m+1}月${isNextMonth?' <span style="font-size:10px;background:#185FA5;color:#fff;border-radius:4px;padding:1px 5px">翌月</span>':''}</span>
+      <button onclick="chgMo(1)" style="${isNextMonth?'opacity:0.3;cursor:default':''}">›</button>
     </div>`;
 
     if(!inPeriod&&staff.type!=='bait'){
@@ -614,7 +682,23 @@ function renderStaff(){
 }
 
 function selStaff(sid){S.selStaff=sid;render();}
-function chgMo(d){S.mo+=d;if(S.mo>11){S.mo=0;S.yr++;}if(S.mo<0){S.mo=11;S.yr--;}render();}
+function chgMo(d){
+  const today=new Date();
+  const nextM=today.getMonth()===11?0:today.getMonth()+1;
+  const nextY=today.getMonth()===11?today.getFullYear()+1:today.getFullYear();
+  const curM=today.getMonth();
+  const curY=today.getFullYear();
+  S.mo+=d;
+  if(S.mo>11){S.mo=0;S.yr++;}
+  if(S.mo<0){S.mo=11;S.yr--;}
+  // スタッフ画面では当月・翌月のみ表示可能
+  // 当月より前または翌月より後は移動不可
+  const isTooOld=(S.yr<curY)||(S.yr===curY&&S.mo<curM);
+  const isTooNew=(S.yr>nextY)||(S.yr===nextY&&S.mo>nextM);
+  if(isTooOld){S.mo=curM;S.yr=curY;}
+  if(isTooNew){S.mo=nextM;S.yr=nextY;}
+  render();
+}
 
 function openReqTypeModal(day){
   const sid=S.selStaff;if(!sid)return;
@@ -1240,10 +1324,12 @@ function renderDataMgmt(){
     <div style="font-size:10px;color:var(--txt3);margin-bottom:12px">※テスト完了後は必ず終了してください</div>
   </div>
   <div class="card">
-    <div class="card-t">☁️ クラウド同期</div>
-    <div class="gb">✅ クラウド同期有効（自動保存中）</div>
-    <button class="bp" onclick="connectJSONBin()" style="margin-top:8px">☁️ アップロード（このデータを送信）</button>
-    <button class="bs" onclick="pullJSONBin()" style="margin-top:6px">⬇️ 最新データを取得</button>
+    <div class="card-t">☁️ クラウド同期（GitHub）</div>
+    <div class="gb" style="margin-bottom:8px">✅ URLを開くと自動で最新データを取得します</div>
+    <div style="font-size:12px;font-weight:600;color:var(--txt2);margin-bottom:4px">GitHubトークン（管理者のみ設定）</div>
+    <input type="password" id="gh-token-input" placeholder="ghp_..." value="${lsGet('gh_token')||''}" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;background:#fafafa;font-size:12px;margin-bottom:8px">
+    <button class="bp" onclick="saveGHToken()" style="margin-top:0">☁️ 保存してアップロード</button>
+    <button class="bs" onclick="manualPullGH()" style="margin-top:6px">⬇️ 最新データを今すぐ取得</button>
     <div class="sep2" style="margin:14px 0"></div>
     <div class="card-t">📤 手動エクスポート／インポート</div>
     <button class="bs" onclick="exportData()" style="margin-top:0">📤 エクスポート（JSON）</button>
@@ -1283,6 +1369,12 @@ function getAllData(){
 // BIN IDとAPIキーを固定（全端末共通・入力不要）
 const FIXED_BIN_ID='6a1952a6ddf5aa59f77366cb';
 const FIXED_JB_KEY='$2a$10$tG9jbP6Mg6EnxWFmy0S7PuwMly03dUX9HSPCcAjLsZyULFJEU6FLG';  // X-MASTER-KEY
+
+// GitHub同期設定
+const GH_OWNER='meichaoxiali-eng';
+const GH_REPO='nursing-schedule';
+const GH_DATA_URL='https://raw.githubusercontent.com/'+GH_OWNER+'/'+GH_REPO+'/main/data.json';
+const GH_API_URL='https://api.github.com/repos/'+GH_OWNER+'/'+GH_REPO+'/dispatches';
 
 async function connectJSONBin(){
   const key=FIXED_JB_KEY;
@@ -1367,6 +1459,28 @@ async function pullJSONBin(){
     // エラーは静かに処理（ローカルデータを保持）
     setSyncStatus(true,'ローカルデータを使用中');
     console.log('pull error:',e.message);
+  }
+}
+
+function saveGHToken(){
+  const tok=document.getElementById('gh-token-input')?.value?.trim();
+  if(!tok){showFlash('トークンを入力してください','ab');return;}
+  lsSet('gh_token',tok);
+  pushToGitHub();
+  showFlash('トークンを保存しました。アップロード中...','gb');
+}
+
+async function manualPullGH(){
+  try{
+    const res=await fetch(GH_DATA_URL+'?t='+Date.now());
+    if(!res.ok){showFlash('取得失敗: '+res.status,'ab');return;}
+    const allData=await res.json();
+    if(!allData||Object.keys(allData).length<=1){showFlash('データが空です','wb');return;}
+    applyAllData(allData);
+    render();
+    showFlash('最新データを取得しました ✓','gb');
+  }catch(e){
+    showFlash('取得エラー: '+e.message,'ab');
   }
 }
 

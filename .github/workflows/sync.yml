@@ -12,8 +12,10 @@ jobs:
         with:
           token: ${{ secrets.SYNC_TOKEN }}
       - name: Update data
+        env:
+          DATA: ${{ toJSON(github.event.client_payload.data) }}
         run: |
-          echo '${{ github.event.client_payload.data }}' > data.json
+          echo $DATA | python3 -c "import sys,json; print(json.loads(sys.stdin.read()))" > data.json
           git config user.email "action@github.com"
           git config user.name "GitHub Action"
           git add data.json

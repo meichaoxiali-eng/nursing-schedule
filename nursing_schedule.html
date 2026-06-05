@@ -385,16 +385,18 @@ function loadAll(){
 
 async function autoSyncOnLoad(){
   try{
-    // GitHubのdata.jsonから直接取得（キャッシュ回避）
+    // GitHubのdata.jsonから取得（キャッシュ回避）
     const res=await fetch(GH_DATA_URL+'?t='+Date.now());
     if(!res.ok) return;
-    const allData=await res.json();
-    if(!allData||typeof allData!=='object'||Object.keys(allData).length<=1) return;
+    const text=await res.text();
+    if(!text||text.trim()==='{}') return;
+    const allData=JSON.parse(text);
+    if(!allData||Object.keys(allData).length<=1) return;
     applyAllData(allData);
     setSyncStatus(true,'同期済み ✓ '+new Date().toLocaleTimeString('ja-JP'));
     render();
   }catch(e){
-    console.log('auto sync error:',e.message);
+    // エラーは無視（ローカルデータで動作継続）
   }
 }
 
@@ -1326,10 +1328,15 @@ function renderDataMgmt(){
   <div class="card">
     <div class="card-t">☁️ クラウド同期（GitHub）</div>
     <div class="gb" style="margin-bottom:8px">✅ URLを開くと自動で最新データを取得します</div>
-    <div style="font-size:12px;font-weight:600;color:var(--txt2);margin-bottom:4px">GitHubトークン（管理者のみ設定）</div>
+    <div style="font-size:12px;font-weight:600;color:var(--txt2);margin-bottom:4px">GitHubトークン（管理者のみ・1回設定すれば保存されます）</div>
     <input type="password" id="gh-token-input" placeholder="ghp_..." value="${lsGet('gh_token')||''}" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;background:#fafafa;font-size:12px;margin-bottom:8px">
     <button class="bp" onclick="saveGHToken()" style="margin-top:0">☁️ 保存してアップロード</button>
     <button class="bs" onclick="manualPullGH()" style="margin-top:6px">⬇️ 最新データを今すぐ取得</button>
+    <div class="sep2" style="margin:14px 0"></div>
+    <div class="card-t">📤 手動エクスポート／インポート</div>
+    <button class="bs" onclick="exportData()" style="margin-top:0">📤 エクスポート（JSON）</button>
+    <div style="margin-top:8px;font-size:12px;font-weight:600;color:var(--txt2);margin-bottom:6px">インポート（JSONファイルを選択）</div>
+    <input type="file" id="import-file2" accept=".json" onchange="importData(this)" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;background:#fafafa;font-size:12px">
     <div class="sep2" style="margin:14px 0"></div>
     <div class="card-t">📤 手動エクスポート／インポート</div>
     <button class="bs" onclick="exportData()" style="margin-top:0">📤 エクスポート（JSON）</button>
@@ -1359,9 +1366,18 @@ function toggleTestMode(){
 // ── JSONBin同期関数 ──
 function getAllData(){
   const d={};
+  // 除外するキー（トークン・認証情報など）
+  const excludePrefixes=['jb_','gist_','gh_','test_mode'];
+  const excludeKeys=['gh_token','gist_token','gist_id','jb_key','jb_bin'];
   for(let i=0;i<localStorage.length;i++){
     const k=localStorage.key(i);
-    if(k&&!k.startsWith('jb_')&&!k.startsWith('gist_'))d[k]=lsGet(k);
+    if(!k) continue;
+    if(excludeKeys.includes(k)) continue;
+    if(excludePrefixes.some(p=>k.startsWith(p))) continue;
+    // ghp_で始まる値も除外
+    const v=lsGet(k);
+    if(typeof v==='string'&&v.startsWith('ghp_')) continue;
+    d[k]=v;
   }
   return d;
 }

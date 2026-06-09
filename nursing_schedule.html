@@ -403,27 +403,35 @@ async function autoSyncOnLoad(){
 // GitHub Actionsでdata.jsonを更新する
 async function pushToGitHub(){
   try{
-    const allData={};
-    for(let i=0;i<localStorage.length;i++){
-      const k=localStorage.key(i);
-      if(!k||k.startsWith('jb_')||k.startsWith('gist_')) continue;
-      try{allData[k]=JSON.parse(localStorage.getItem(k));}catch(e){}
+    const token=lsGet('gh_token');
+    if(!token) return;
+    
+    // トークンを絶対に含まないクリーンなデータを作成
+    const cleanData=getAllData(); // getAllData()は既にトークンを除外済み
+    
+    // 念のためJSONに変換してghp_が含まれていないか確認
+    const dataStr=JSON.stringify(cleanData);
+    if(dataStr.includes('ghp_')||dataStr.includes('$2a$')){
+      console.log('トークンが検出されました。アップロードを中止します。');
+      return;
     }
-    // repository_dispatchでGitHub Actionsをトリガー
+    
     const res=await fetch(GH_API_URL,{
       method:'POST',
       headers:{
         'Content-Type':'application/json',
         'Accept':'application/vnd.github.v3+json',
-        'Authorization':'token '+lsGet('gh_token')
+        'Authorization':'token '+token
       },
       body:JSON.stringify({
         event_type:'sync-data',
-        client_payload:{data:JSON.stringify(allData)}
+        client_payload:{data:dataStr}
       })
     });
     if(res.status===204){
       setSyncStatus(true,'クラウド保存中...');
+    }else{
+      console.log('push error:',res.status);
     }
   }catch(e){
     console.log('push error:',e.message);

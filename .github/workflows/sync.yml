@@ -7,19 +7,16 @@ permissions:
 jobs:
   sync:
     runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.SYNC_TOKEN }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v3
-        with:
-          token: ${{ secrets.SYNC_TOKEN }}
-          persist-credentials: true
-      - name: Update data
+      - name: Update data file
         run: |
-          cat << 'DATAEOF' > data.json
-          ${{ github.event.client_payload.data }}
-          DATAEOF
+          git clone https://x-access-token:${GH_TOKEN}@github.com/meichaoxiali-eng/nursing-schedule.git repo
+          cd repo
+          echo '${{ github.event.client_payload.data }}' > data.json
           git config user.email "action@github.com"
           git config user.name "GitHub Action"
           git add data.json
           git commit -m "Update schedule data" || echo "No changes"
-          git push https://x-access-token:${{ secrets.SYNC_TOKEN }}@github.com/meichaoxiali-eng/nursing-schedule.git
+          git push

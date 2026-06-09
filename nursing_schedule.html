@@ -1336,7 +1336,7 @@ function renderDataMgmt(){
     <div class="card-t">📤 手動エクスポート／インポート</div>
     <button class="bs" onclick="exportData()" style="margin-top:0">📤 エクスポート（JSON）</button>
     <div style="margin-top:8px;font-size:12px;font-weight:600;color:var(--txt2);margin-bottom:6px">インポート（JSONファイルを選択）</div>
-    <input type="file" id="import-file2" accept=".json" onchange="importData(this)" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;background:#fafafa;font-size:12px">
+    <input type="file" id="import-file" accept=".json" onchange="importData(this)" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;background:#fafafa;font-size:12px">
     <div class="sep2" style="margin:14px 0"></div>
     <div class="card-t">📤 手動エクスポート／インポート</div>
     <button class="bs" onclick="exportData()" style="margin-top:0">📤 エクスポート（JSON）</button>
@@ -1366,17 +1366,24 @@ function toggleTestMode(){
 // ── JSONBin同期関数 ──
 function getAllData(){
   const d={};
-  // 除外するキー（トークン・認証情報など）
-  const excludePrefixes=['jb_','gist_','gh_','test_mode'];
-  const excludeKeys=['gh_token','gist_token','gist_id','jb_key','jb_bin'];
+  // 除外するキー（完全一致）
+  const excludeKeys=new Set([
+    'gh_token','gist_token','gist_id','jb_key','jb_bin','test_mode',
+    'firebase:host:nursing-schedule-234c9-default-rtdb.firebaseio.com'
+  ]);
+  // 除外するプレフィックス
+  const excludePrefixes=['jb_','gist_','gh_','firebase:'];
   for(let i=0;i<localStorage.length;i++){
     const k=localStorage.key(i);
     if(!k) continue;
-    if(excludeKeys.includes(k)) continue;
+    if(excludeKeys.has(k)) continue;
     if(excludePrefixes.some(p=>k.startsWith(p))) continue;
-    // ghp_で始まる値も除外
     const v=lsGet(k);
-    if(typeof v==='string'&&v.startsWith('ghp_')) continue;
+    // 値がghp_や$2a$で始まる場合も除外
+    if(typeof v==='string'&&(v.startsWith('ghp_')||v.startsWith('$2a$'))) continue;
+    // オブジェクトの中にトークンが含まれていないか再帰チェック
+    const str=JSON.stringify(v);
+    if(str&&(str.includes('ghp_')||str.includes('$2a$10$'))) continue;
     d[k]=v;
   }
   return d;

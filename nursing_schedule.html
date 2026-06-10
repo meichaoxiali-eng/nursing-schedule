@@ -176,6 +176,78 @@ select.full{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3
 }
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+// Supabase設定
+const SUPABASE_URL='https://asbhwuxmxftuxjtnxtum.supabase.co';
+const SUPABASE_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFzYmh3dXhteGZ0dXhqdG54dHVtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEwNDIyNjQsImV4cCI6MjA5NjYxODI2NH0.4f2K6wPfEQE-I6vFqBGlplU81092GeidwWCbe0SoBiQ';
+
+// Supabaseにデータを保存
+async function sbPush(key, value){
+  try{
+    const res=await fetch(SUPABASE_URL+'/rest/v1/nursing_data',{
+      method:'POST',
+      headers:{
+        'apikey':SUPABASE_KEY,
+        'Authorization':'Bearer '+SUPABASE_KEY,
+        'Content-Type':'application/json',
+        'Prefer':'resolution=merge-duplicates'
+      },
+      body:JSON.stringify({key:key,value:JSON.stringify(value)})
+    });
+    return res.ok;
+  }catch(e){
+    console.log('sbPush error:',e.message);
+    return false;
+  }
+}
+
+// Supabaseから全データを取得
+async function sbPullAll(){
+  try{
+    const res=await fetch(SUPABASE_URL+'/rest/v1/nursing_data?select=key,value',{
+      headers:{
+        'apikey':SUPABASE_KEY,
+        'Authorization':'Bearer '+SUPABASE_KEY
+      }
+    });
+    if(!res.ok) return null;
+    const rows=await res.json();
+    if(!rows||rows.length===0) return null;
+    const result={};
+    rows.forEach(r=>{
+      try{result[r.key]=JSON.parse(r.value);}catch(e){result[r.key]=r.value;}
+    });
+    return result;
+  }catch(e){
+    console.log('sbPullAll error:',e.message);
+    return null;
+  }
+}
+
+// Supabaseに全データを保存
+async function sbPushAll(){
+  try{
+    const allData=getAllData();
+    const rows=Object.keys(allData).map(k=>{
+      return {key:k,value:JSON.stringify(allData[k])};
+    });
+    const res=await fetch(SUPABASE_URL+'/rest/v1/nursing_data',{
+      method:'POST',
+      headers:{
+        'apikey':SUPABASE_KEY,
+        'Authorization':'Bearer '+SUPABASE_KEY,
+        'Content-Type':'application/json',
+        'Prefer':'resolution=merge-duplicates'
+      },
+      body:JSON.stringify(rows)
+    });
+    return res.ok;
+  }catch(e){
+    console.log('sbPushAll error:',e.message);
+    return false;
+  }
+}
+</script>
 </head>
 <body>
 <div class="app" id="app">
@@ -317,14 +389,14 @@ function saveSch(y,m,data){
   lsSet(k,data);
   broadcastUpdate(k,data);
   // 自動Gist同期
-  if(lsGet('gh_token')) setTimeout(()=>pushToGitHub(),1000);
+  setTimeout(()=>sbPushAll(),500);
 }
 function saveStaff(){
   S.staffList.forEach(s=>{}); // validate
   lsSet('staffList',S.staffList);
   broadcastUpdate('staffList',S.staffList);
   // 自動Gist同期
-  if(lsGet('gh_token')) setTimeout(()=>pushToGitHub(),1000);
+  setTimeout(()=>sbPushAll(),500);
 }
 function saveWelfare(y,m,sid,data){
   const k=wk(y,m,sid);
@@ -385,18 +457,13 @@ function loadAll(){
 
 async function autoSyncOnLoad(){
   try{
-    // GitHubのdata.jsonから取得（キャッシュ回避）
-    const res=await fetch(GH_DATA_URL+'?t='+Date.now());
-    if(!res.ok) return;
-    const text=await res.text();
-    if(!text||text.trim()==='{}') return;
-    const allData=JSON.parse(text);
+    const allData=await sbPullAll();
     if(!allData||Object.keys(allData).length<=1) return;
     applyAllData(allData);
     setSyncStatus(true,'同期済み ✓ '+new Date().toLocaleTimeString('ja-JP'));
     render();
   }catch(e){
-    // エラーは無視（ローカルデータで動作継続）
+    console.log('auto sync error:',e.message);
   }
 }
 
@@ -790,25 +857,40 @@ async function sendRequest(sid){
   if(!staff)return;
   const y=S.yr,m=S.mo;
   const reqs=getReqs(y,m,sid);
-  // データをGitHubにアップロード
-  setSyncStatus(false,'送信中...');
-  try{
-    await pushToGitHub();
-    setSyncStatus(true,'送信完了 ✓');
-    // 送信完了モーダル表示
-    document.getElementById('modal-area').innerHTML=`
+  
+  // 自分の希望データのみをJSONとしてダウンロード
+  const myData={};
+  // スタッフリスト
+  myData['staffList']=S.staffList;
+  // 希望休データ
+  const reqKey=rk(y,m,sid);
+  if(S.requests[reqKey]) myData[reqKey]=S.requests[reqKey];
+  // 希望種別データ
+  Object.keys(S.reqTypes).filter(k=>k.includes(sid)).forEach(k=>{myData[k]=S.reqTypes[k];});
+  // 勤務希望データ
+  const spKey=spk(y,m,sid);
+  if(S.shiftPrefs[spKey]) myData[spKey]=S.shiftPrefs[spKey];
+
+  const blob=new Blob([JSON.stringify(myData,null,2)],{type:'application/json'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;
+  a.download=`希望休_${staff.name}_${y}年${m+1}月.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+
+  // 送信完了モーダル表示
+  document.getElementById('modal-area').innerHTML=`
     <div class="modal-bg" onclick="closeModal()">
       <div class="modal" onclick="event.stopPropagation()">
         <div style="text-align:center;padding:10px 0">
           <div style="font-size:48px;margin-bottom:12px">📨</div>
-          <h3 style="font-size:16px;font-weight:600;margin-bottom:8px">送信完了しました</h3>
+          <h3 style="font-size:16px;font-weight:600;margin-bottom:8px">送信準備完了</h3>
           <div style="background:#EAF3DE;border-radius:10px;padding:12px 16px;font-size:13px;color:#27500A;margin-bottom:16px;line-height:1.6">
-            ${staff.name}さんの希望休を管理者に送信しました。<br>
-            <strong>${m+1}月の希望休：${reqs.length}日</strong>
-            ${reqs.length>0?'（'+reqs.join('日、')+'日）':''}
-          </div>
-          <div style="font-size:12px;color:#666;margin-bottom:16px">
-            管理者が確認します。変更がある場合は再度送信してください。
+            📥 ファイルがダウンロードされました。<br>
+            <strong>このファイルをLINEで管理者に送ってください。</strong><br><br>
+            ${staff.name}さんの希望休：${reqs.length}日
+            ${reqs.length>0?'（'+reqs.map(d=>m+1+'月'+d+'日').join('、')+'）':''}
           </div>
           <button onclick="closeModal()" style="width:100%;padding:12px;background:#185FA5;color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer">
             閉じる
@@ -816,10 +898,6 @@ async function sendRequest(sid){
         </div>
       </div>
     </div>`;
-  }catch(e){
-    setSyncStatus(false,'送信エラー');
-    showFlash('送信に失敗しました。もう一度お試しください。','ab');
-  }
 }
 
 function submitShiftPref(){
@@ -1334,12 +1412,10 @@ function renderDataMgmt(){
     <div style="font-size:10px;color:var(--txt3);margin-bottom:12px">※テスト完了後は必ず終了してください</div>
   </div>
   <div class="card">
-    <div class="card-t">☁️ クラウド同期（GitHub）</div>
-    <div class="gb" style="margin-bottom:8px">✅ URLを開くと自動で最新データを取得します</div>
-    <div style="font-size:12px;font-weight:600;color:var(--txt2);margin-bottom:4px">GitHubトークン（管理者のみ・1回設定すれば保存されます）</div>
-    <input type="password" id="gh-token-input" placeholder="ghp_..." value="${lsGet('gh_token')||''}" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;background:#fafafa;font-size:12px;margin-bottom:8px">
-    <button class="bp" onclick="saveGHToken()" style="margin-top:0">☁️ 保存してアップロード</button>
-    <button class="bs" onclick="manualPullGH()" style="margin-top:6px">⬇️ 最新データを今すぐ取得</button>
+    <div class="card-t">☁️ クラウド同期（Supabase）</div>
+    <div class="gb" style="margin-bottom:8px">✅ リアルタイム自動同期中 - URLを開くと最新データを自動取得します</div>
+    <button class="bp" onclick="manualPushSB()" style="margin-top:0">☁️ 今すぐアップロード</button>
+    <button class="bs" onclick="manualPullSB()" style="margin-top:6px">⬇️ 最新データを今すぐ取得</button>
     <div class="sep2" style="margin:14px 0"></div>
     <div class="card-t">📤 手動エクスポート／インポート</div>
     <button class="bs" onclick="exportData()" style="margin-top:0">📤 エクスポート（JSON）</button>
@@ -1512,6 +1588,27 @@ async function manualPullGH(){
     showFlash('最新データを取得しました ✓','gb');
   }catch(e){
     showFlash('取得エラー: '+e.message,'ab');
+  }
+}
+
+async function manualPushSB(){
+  setSyncStatus(false,'アップロード中...');
+  const ok=await sbPushAll();
+  if(ok){setSyncStatus(true,'アップロード完了 ✓');showFlash('アップロード完了 ✓','gb');}
+  else{setSyncStatus(false,'エラー');showFlash('アップロード失敗','ab');}
+}
+
+async function manualPullSB(){
+  setSyncStatus(false,'取得中...');
+  const allData=await sbPullAll();
+  if(allData&&Object.keys(allData).length>1){
+    applyAllData(allData);
+    render();
+    setSyncStatus(true,'取得完了 ✓ '+new Date().toLocaleTimeString('ja-JP'));
+    showFlash('最新データを取得しました ✓','gb');
+  }else{
+    setSyncStatus(false,'データなし');
+    showFlash('クラウドにデータがありません','wb');
   }
 }
 

@@ -2590,6 +2590,9 @@ function printPDF(){
 
   const win=window.open('','_blank');
   win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
   <title>${y}年${m+1}月 勤務表</title>
   <style>
     @page{size:A4 landscape;margin:8mm}

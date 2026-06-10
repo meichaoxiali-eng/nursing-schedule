@@ -876,46 +876,60 @@ async function sendRequest(sid){
   const y=S.yr,m=S.mo;
   const reqs=getReqs(y,m,sid);
   
-  // 自分の希望データのみをJSONとしてダウンロード
-  const myData={};
-  // スタッフリスト
-  myData['staffList']=S.staffList;
-  // 希望休データ
-  const reqKey=rk(y,m,sid);
-  if(S.requests[reqKey]) myData[reqKey]=S.requests[reqKey];
-  // 希望種別データ
-  Object.keys(S.reqTypes).filter(k=>k.includes(sid)).forEach(k=>{myData[k]=S.reqTypes[k];});
-  // 勤務希望データ
-  const spKey=spk(y,m,sid);
-  if(S.shiftPrefs[spKey]) myData[spKey]=S.shiftPrefs[spKey];
-
-  const blob=new Blob([JSON.stringify(myData,null,2)],{type:'application/json'});
-  const url=URL.createObjectURL(blob);
-  const a=document.createElement('a');
-  a.href=url;
-  a.download=`希望休_${staff.name}_${y}年${m+1}月.json`;
-  a.click();
-  URL.revokeObjectURL(url);
-
-  // 送信完了モーダル表示
-  document.getElementById('modal-area').innerHTML=`
-    <div class="modal-bg" onclick="closeModal()">
-      <div class="modal" onclick="event.stopPropagation()">
-        <div style="text-align:center;padding:10px 0">
-          <div style="font-size:48px;margin-bottom:12px">📨</div>
-          <h3 style="font-size:16px;font-weight:600;margin-bottom:8px">送信準備完了</h3>
-          <div style="background:#EAF3DE;border-radius:10px;padding:12px 16px;font-size:13px;color:#27500A;margin-bottom:16px;line-height:1.6">
-            📥 ファイルがダウンロードされました。<br>
-            <strong>このファイルをLINEで管理者に送ってください。</strong><br><br>
-            ${staff.name}さんの希望休：${reqs.length}日
-            ${reqs.length>0?'（'+reqs.map(d=>m+1+'月'+d+'日').join('、')+'）':''}
+  setSyncStatus(false,'送信中...');
+  try{
+    // Supabaseに希望データを保存
+    const reqKey=rk(y,m,sid);
+    const spKey=spk(y,m,sid);
+    const rows=[];
+    if(S.requests[reqKey]) rows.push({key:reqKey,value:JSON.stringify(S.requests[reqKey])});
+    Object.keys(S.reqTypes).filter(k=>k.includes(sid)).forEach(k=>{
+      rows.push({key:k,value:JSON.stringify(S.reqTypes[k])});
+    });
+    if(S.shiftPrefs[spKey]) rows.push({key:spKey,value:JSON.stringify(S.shiftPrefs[spKey])});
+    
+    if(rows.length>0){
+      // 既存データを削除してから挿入
+      for(const row of rows){
+        await fetch(SUPABASE_URL+'/rest/v1/nursing_data?key=eq.'+encodeURIComponent(row.key),{
+          method:'DELETE',
+          headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY}
+        });
+      }
+      const res=await fetch(SUPABASE_URL+'/rest/v1/nursing_data',{
+        method:'POST',
+        headers:{
+          'apikey':SUPABASE_KEY,
+          'Authorization':'Bearer '+SUPABASE_KEY,
+          'Content-Type':'application/json'
+        },
+        body:JSON.stringify(rows)
+      });
+      if(!res.ok) throw new Error('送信失敗: '+res.status);
+    }
+    
+    setSyncStatus(true,'送信完了 ✓');
+    document.getElementById('modal-area').innerHTML=`
+      <div class="modal-bg" onclick="closeModal()">
+        <div class="modal" onclick="event.stopPropagation()">
+          <div style="text-align:center;padding:10px 0">
+            <div style="font-size:48px;margin-bottom:12px">📨</div>
+            <h3 style="font-size:16px;font-weight:600;margin-bottom:8px">送信完了しました</h3>
+            <div style="background:#EAF3DE;border-radius:10px;padding:12px 16px;font-size:13px;color:#27500A;margin-bottom:16px;line-height:1.6">
+              ${staff.name}さんの希望休を管理者に送信しました。<br>
+              <strong>${m+1}月の希望休：${reqs.length}日</strong>
+              ${reqs.length>0?'（'+reqs.map(d=>m+1+'月'+d+'日').join('、')+'）':''}
+            </div>
+            <button onclick="closeModal()" style="width:100%;padding:12px;background:#185FA5;color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer">
+              閉じる
+            </button>
           </div>
-          <button onclick="closeModal()" style="width:100%;padding:12px;background:#185FA5;color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer">
-            閉じる
-          </button>
         </div>
-      </div>
-    </div>`;
+      </div>`;
+  }catch(e){
+    setSyncStatus(false,'送信エラー');
+    showFlash('送信に失敗しました。もう一度お試しください。','ab');
+  }
 }
 
 function submitShiftPref(){

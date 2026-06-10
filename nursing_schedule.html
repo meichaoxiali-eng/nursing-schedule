@@ -790,10 +790,10 @@ async function sendRequest(sid){
   if(!staff)return;
   const y=S.yr,m=S.mo;
   const reqs=getReqs(y,m,sid);
-  // データをエクスポートしてJSONBinにアップロード
+  // データをGitHubにアップロード
   setSyncStatus(false,'送信中...');
   try{
-    await pushJSONBin(FIXED_JB_KEY,FIXED_BIN_ID);
+    await pushToGitHub();
     setSyncStatus(true,'送信完了 ✓');
     // 送信完了モーダル表示
     document.getElementById('modal-area').innerHTML=`

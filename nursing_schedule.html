@@ -814,6 +814,11 @@ function openReqTypeModal(day){
     saveReqTypes(y,m,sid,newTypes);
     setSyncStatus(true,'解除しました');render();return;
   }
+  // 月3回上限チェック
+  if(reqs.length>=MAX_REQ){
+    showFlash(`希望休は月${MAX_REQ}日までです。すでに${reqs.length}日登録されています。`,'ab');
+    return;
+  }
   // 重複チェック
   const others=S.staffList.filter(s=>s.id!==sid);
   const sameDay=others.filter(s=>getReqs(y,m,s.id).includes(day));

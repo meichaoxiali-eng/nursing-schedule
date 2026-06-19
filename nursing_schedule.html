@@ -314,21 +314,21 @@ function isHoliday(y,m,d){
 //  デフォルトスタッフ
 // ============================================================
 const DEFAULT_STAFF=[
-  {id:'kanri-ns',name:'管理者（看護）',type:'nurse',nightOk:false,weekendOff:true,nightMax:0,dayOnly:true,nightCenter:false,nightOnly:false,isKanri:true,empType:'B'},
-  {id:'day-a',name:'日勤専任A（看護）',type:'nurse',nightOk:false,weekendOff:false,nightMax:0,dayOnly:true,nightCenter:false,nightOnly:false,isKanri:false,empType:'A'},
-  {id:'day-b',name:'日勤専任B（看護）',type:'nurse',nightOk:false,weekendOff:false,nightMax:0,dayOnly:true,nightCenter:false,nightOnly:false,isKanri:false,empType:'A'},
-  {id:'night-c',name:'夜勤多めC（看護）',type:'nurse',nightOk:true,weekendOff:false,nightMax:10,dayOnly:false,nightCenter:false,nightOnly:false,isKanri:false,empType:'A'},
-  {id:'night-d',name:'夜勤4回D（看護）',type:'nurse',nightOk:true,weekendOff:false,nightMax:4,dayOnly:false,nightCenter:false,nightOnly:false,isKanri:false,empType:'A'},
-  {id:'nightonly-f',name:'夜勤専従F（看護）',type:'nurse',nightOk:true,weekendOff:false,nightMax:10,dayOnly:false,nightCenter:true,nightOnly:false,isKanri:false,empType:'A'},
-  {id:'bait-l',name:'バイトL（看護）',type:'bait',nightOk:true,weekendOff:false,nightMax:4,dayOnly:false,nightCenter:false,nightOnly:true,isKanri:false},
-  {id:'bait-m',name:'バイトM（看護）',type:'bait',nightOk:true,weekendOff:false,nightMax:4,dayOnly:false,nightCenter:false,nightOnly:true,isKanri:false},
-  {id:'bait-n',name:'バイトN（看護）',type:'bait',nightOk:true,weekendOff:false,nightMax:2,dayOnly:false,nightCenter:false,nightOnly:true,isKanri:false},
-  {id:'bait-o',name:'バイトO（看護）',type:'bait',nightOk:true,weekendOff:false,nightMax:2,dayOnly:false,nightCenter:false,nightOnly:true,isKanri:false},
-  {id:'kanri-care',name:'管理者（介護）',type:'care',nightOk:false,weekendOff:true,nightMax:0,dayOnly:true,nightCenter:false,nightOnly:false,isKanri:true,empType:'B'},
-  {id:'nightonly-g',name:'夜勤専従G（介護）',type:'care',nightOk:true,weekendOff:false,nightMax:11,dayOnly:false,nightCenter:true,nightOnly:false,isKanri:false,empType:'A'},
-  {id:'nightonly-h',name:'夜勤専従H（介護）',type:'care',nightOk:true,weekendOff:false,nightMax:11,dayOnly:false,nightCenter:true,nightOnly:false,isKanri:false,empType:'A'},
-  {id:'sabikan-j',name:'サビ管J（介護）',type:'care',nightOk:true,weekendOff:false,nightMax:5,dayOnly:false,nightCenter:false,nightOnly:false,isKanri:false,empType:'A'},
-  {id:'k-san',name:'Kさん（介護）',type:'care',nightOk:true,weekendOff:false,nightMax:4,dayOnly:false,nightCenter:false,nightOnly:false,isKanri:false,empType:'A'},
+  {id:'kanri-ns',name:'管理者（看護）',type:'nurse',nightOk:false,weekendOff:true,nightMax:0,dayOnly:true,nightCenter:false,nightOnly:false,isKanri:true,empType:'B',employment:'fulltime'},
+  {id:'day-a',name:'日勤専任A（看護）',type:'nurse',nightOk:false,weekendOff:false,nightMax:0,dayOnly:true,nightCenter:false,nightOnly:false,isKanri:false,empType:'A',employment:'fulltime'},
+  {id:'day-b',name:'日勤専任B（看護）',type:'nurse',nightOk:false,weekendOff:false,nightMax:0,dayOnly:true,nightCenter:false,nightOnly:false,isKanri:false,empType:'A',employment:'fulltime'},
+  {id:'night-c',name:'夜勤多めC（看護）',type:'nurse',nightOk:true,weekendOff:false,nightMax:10,dayOnly:false,nightCenter:false,nightOnly:false,isKanri:false,empType:'A',employment:'fulltime'},
+  {id:'night-d',name:'夜勤4回D（看護）',type:'nurse',nightOk:true,weekendOff:false,nightMax:4,dayOnly:false,nightCenter:false,nightOnly:false,isKanri:false,empType:'A',employment:'fulltime'},
+  {id:'nightonly-f',name:'夜勤専従F（看護）',type:'nurse',nightOk:true,weekendOff:false,nightMax:10,dayOnly:false,nightCenter:true,nightOnly:false,isKanri:false,empType:'A',employment:'fulltime'},
+  {id:'bait-l',name:'バイトL（看護）',type:'bait',nightOk:true,weekendOff:false,nightMax:4,dayOnly:false,nightCenter:false,nightOnly:true,isKanri:false,employment:'part'},
+  {id:'bait-m',name:'バイトM（看護）',type:'bait',nightOk:true,weekendOff:false,nightMax:4,dayOnly:false,nightCenter:false,nightOnly:true,isKanri:false,employment:'fulltime'},
+  {id:'bait-n',name:'バイトN（看護）',type:'bait',nightOk:true,weekendOff:false,nightMax:2,dayOnly:false,nightCenter:false,nightOnly:true,isKanri:false,employment:'part'},
+  {id:'bait-o',name:'バイトO（看護）',type:'bait',nightOk:true,weekendOff:false,nightMax:2,dayOnly:false,nightCenter:false,nightOnly:true,isKanri:false,employment:'part'},
+  {id:'kanri-care',name:'管理者（介護）',type:'care',nightOk:false,weekendOff:true,nightMax:0,dayOnly:true,nightCenter:false,nightOnly:false,isKanri:true,empType:'B',employment:'fulltime'},
+  {id:'nightonly-g',name:'夜勤専従G（介護）',type:'care',nightOk:true,weekendOff:false,nightMax:11,dayOnly:false,nightCenter:true,nightOnly:false,isKanri:false,empType:'A',employment:'fulltime'},
+  {id:'nightonly-h',name:'夜勤専従H（介護）',type:'care',nightOk:true,weekendOff:false,nightMax:11,dayOnly:false,nightCenter:true,nightOnly:false,isKanri:false,empType:'A',employment:'fulltime'},
+  {id:'sabikan-j',name:'サビ管J（介護）',type:'care',nightOk:true,weekendOff:false,nightMax:5,dayOnly:false,nightCenter:false,nightOnly:false,isKanri:false,empType:'A',employment:'fulltime'},
+  {id:'k-san',name:'Kさん（介護）',type:'care',nightOk:true,weekendOff:false,nightMax:4,dayOnly:false,nightCenter:false,nightOnly:false,isKanri:false,empType:'A',employment:'fulltime'},
 ];
 
 const SHIFTS=['日勤','A勤','P勤','夜勤','夜勤明け','休み','有給','空白'];
@@ -1338,7 +1338,7 @@ function renderStaffMgmt(){
             <span class="tag ${cls}">${lbl}</span>
             <span style="font-size:13px;font-weight:500">${s.name}</span>
           </div>
-          <span style="font-size:10px;color:var(--txt3)">夜勤${s.nightOk?'可':'不可'}${s.nightMax>0?' 上限'+s.nightMax+'回':''}${s.weekendOff?' 土日休':''}${s.isKanri?' 管理者(5連勤可)':''}　区分:${s.empType||'A'}</span>
+          <span style="font-size:10px;color:var(--txt3)">夜勤${s.nightOk?'可':'不可'}${s.nightMax>0?' 上限'+s.nightMax+'回':''}${s.weekendOff?' 土日休':''}${s.isKanri?' 管理者(5連勤可)':''}　区分:${s.empType||'A'}　${s.employment==='part'?'パート':'正社員'}</span>
         </div>
         <div style="display:flex;gap:4px;flex-shrink:0">
           <button style="padding:5px 8px;border:1px solid var(--border);border-radius:7px;background:#fafafa;font-size:14px;cursor:pointer;line-height:1" onclick="moveStaff('${s.id}',-1)" title="上へ">↑</button>
@@ -2127,9 +2127,33 @@ function genDraft(){
   // ══════════════════════════════════════════════
   S.staffList.forEach(s=>{
     if(s.type==='bait') return;
-    if(s.nightOnly||s.nightCenter){
-      // 夜勤専従: 空きは全て休み（休日数制限なし）
+    if(s.nightOnly||(s.nightCenter&&s.employment==='part')){
+      // 夜勤専従パート: 空きは全て休み（休日数制限なし）
       for(let d=1;d<=days;d++) if(!data[s.id][d]) data[s.id][d]='休み';
+      return;
+    }
+    if(s.nightCenter&&s.employment!=='part'){
+      // 夜勤専従正社員: 空きを休みにした後、休日数が多すぎる場合は日勤に変換
+      for(let d=1;d<=days;d++) if(!data[s.id][d]) data[s.id][d]='休み';
+      // 現在の休み数を確認
+      let offCount=0;
+      for(let d=1;d<=days;d++) if(data[s.id][d]==='休み') offCount++;
+      // 目標休日数を超えている場合、夜勤明け翌日以外の余分な休みを日勤に変換
+      if(offCount>targetOff){
+        let excess=offCount-targetOff;
+        for(let d=1;d<=days&&excess>0;d++){
+          if(data[s.id][d]==='休み'){
+            // 夜勤明けの翌日は固定休みなので変更不可
+            const prevShift=d>1?data[s.id][d-1]:'';
+            if(prevShift==='夜勤明け') continue;
+            // 希望休は変更不可
+            const reqs=getReqs(y,m,s.id);
+            if(reqs.includes(d)) continue;
+            data[s.id][d]='日勤';
+            excess--;
+          }
+        }
+      }
       return;
     }
 
@@ -2340,6 +2364,13 @@ function staffForm(s){
       <option value="C"${(v.empType||'')==='C'?' selected':''}>C - 非常勤で専従</option>
       <option value="D"${(v.empType||'')==='D'?' selected':''}>D - 非常勤で兼務</option>
     </select>
+  </div>
+  <div class="row-f" style="margin-top:8px">
+    <label style="font-size:12px;color:var(--txt2);margin-right:8px">雇用形態</label>
+    <select id="sf-employment" style="flex:1;padding:8px;border:1px solid var(--border);border-radius:8px;background:#fafafa;font-size:13px">
+      <option value="fulltime"${(v.employment||'fulltime')==='fulltime'?' selected':''}>正社員（休日9日/2月8日）</option>
+      <option value="part"${(v.employment||'')==='part'?' selected':''}>パート（休日数制限なし）</option>
+    </select>
   </div>`;
 }
 
@@ -2372,6 +2403,7 @@ function addStaff(){
     nightOnly:document.getElementById('sf-nightonly').checked,
     isKanri:document.getElementById('sf-iskanri').checked,
     empType:document.getElementById('sf-emptype')?.value||'A',
+    employment:document.getElementById('sf-employment')?.value||'fulltime',
     dayOnly:false,
   });
   saveStaff();closeModal();
@@ -2390,6 +2422,7 @@ function editStaff(sid){
     nightOnly:document.getElementById('sf-nightonly').checked,
     isKanri:document.getElementById('sf-iskanri').checked,
     empType:document.getElementById('sf-emptype')?.value||'A',
+    employment:document.getElementById('sf-employment')?.value||'fulltime',
   };
   saveStaff();closeModal();
 }

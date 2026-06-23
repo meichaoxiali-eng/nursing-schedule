@@ -2012,10 +2012,38 @@ function genDraft(){
   // 最大セット数
   function getMaxSets(s){
     if(s.nightCenter){
-      // 夜勤専従: 月の日数から最大セット数を計算（夜明休=3日/セット）
-      return Math.min(s.nightMax, Math.floor(days/3));
+      // 夜勤専従: 月の日数から最大セット数を計算
+      return Math.min(s.nightMax, Math.floor(days/3)+1);
     }
     return 3; // 一般夜勤可: 月3セットまで
+  }
+
+  // 連続夜勤パターンカウント（夜明夜明=2連続, 夜明夜明夜明=3連続）
+  function countConsecSets(sid, upTo){
+    let maxConsec=0, cur=0;
+    for(let x=1;x<upTo;x++){
+      if((data[sid][x]||'')==='夜勤'&&(data[sid][x+1]||'')==='夜勤明け'){
+        cur++;
+        maxConsec=Math.max(maxConsec,cur);
+      } else if((data[sid][x]||'')!=='夜勤'){
+        cur=0;
+      }
+    }
+    return maxConsec;
+  }
+
+  // 3連続パターン（夜明夜明夜明）の回数カウント
+  function count3Sets(sid){
+    let count=0,consec=0;
+    for(let x=1;x<=days;x++){
+      if((data[sid][x]||'')==='夜勤'&&x<days&&(data[sid][x+1]||'')==='夜勤明け'){
+        consec++;
+        if(consec>=3) count++;
+      } else {
+        consec=0;
+      }
+    }
+    return count;
   }
 
   // その日に夜勤可能か
@@ -2023,6 +2051,20 @@ function genDraft(){
     if(data[s.id][d]==='休み') return false;
     if(nc[s.id]>=s.nightMax)   return false;
     if(d>1&&data[s.id][d-1]==='夜勤') return false;
+    // 夜勤専従正社員の連続パターン制御
+    if(s.nightCenter&&s.employment!=='part'){
+      // 現在の連続セット数を確認
+      let curConsec=0;
+      for(let x=d-1;x>=1;x--){
+        if((data[s.id][x]||'')==='夜勤'&&(data[s.id][x+1]||'')==='夜勤明け') curConsec++;
+        else break;
+      }
+      // 又吉博秋（bait-m）: 2連続まで
+      if(s.id==='bait-m'&&curConsec>=2) return false;
+      // 新垣・新里: 3連続は月1回まで
+      if(s.id!=='bait-m'&&curConsec>=3) return false;
+      if(s.id!=='bait-m'&&curConsec>=2&&count3Sets(s.id)>=1) return false;
+    }
     // 翌日に夜勤明け以外の確定シフトがある場合は不可
     if(d<days){
       const next=data[s.id][d+1]||'';
@@ -2138,48 +2180,34 @@ function genDraft(){
       return;
     }
     if(s.nightCenter&&s.employment!=='part'){
-      // 夜勤専従正社員: 月またぎを活用して所定休日9日になるよう調整
+      // 夜勤専従正社員: 所定休日9日を守りつつ連続パターンを考慮
       const reqsNC=getReqs(y,m,s.id);
       // まず空きを全て休みにする
       for(let d=1;d<=days;d++) if(!data[s.id][d]) data[s.id][d]='休み';
-      // 現在の休み数をカウント
+      // 現在の休み数をカウント（希望休・夜勤明け翌日を除く変更可能な休み）
       let offCount=0;
       for(let d=1;d<=days;d++) if(data[s.id][d]==='休み') offCount++;
       
-      // targetOffを超えた分を削減する
       if(offCount>targetOff){
         let excess=offCount-targetOff;
-        
-        // 方法1: 月末を夜勤にして翌月に夜勤明けを持ち越す（月またぎ）
-        // 月末の休みを夜勤に変換できるか確認
-        if(excess>0&&data[s.id][days]==='休み'&&!reqsNC.includes(days)){
-          const prevLast=data[s.id][days-1]||'';
-          // 月末が休みで前日が夜勤明けでない場合、夜勤に変換
-          if(prevLast!=='夜勤明け'&&prevLast!=='夜勤'){
-            data[s.id][days]='夜勤';
-            offCount--;
+        // 変更可能な休みを日勤に変換（前から順番に）
+        for(let d=1;d<=days&&excess>0;d++){
+          if(data[s.id][d]==='休み'){
+            const prevShift=d>1?data[s.id][d-1]:'';
+            if(prevShift==='夜勤明け') continue; // 夜勤明け翌日は変更不可
+            if(reqsNC.includes(d)) continue;     // 希望休は変更不可
+            const nextShift=d<days?data[s.id][d+1]:'';
+            if(nextShift==='夜勤') continue;     // 夜勤前日は変更不可
+            data[s.id][d]='日勤';
             excess--;
           }
         }
-        
-        // 方法2: 月初が夜勤明けの場合、前月末が夜勤なので1日目の夜勤明けは固定
-        // 1日目が空きなら夜勤明けに（前月末の夜勤を想定）
-        if(excess>0&&!data[s.id][1]){
-          data[s.id][1]='夜勤明け';
-        }
-        
-        // 方法3: 残りの変更可能な休みを日勤に変換
-        if(excess>0){
-          for(let d=days-1;d>=1&&excess>0;d--){
-            if(data[s.id][d]==='休み'){
-              const prevShift=d>1?data[s.id][d-1]:'';
-              if(prevShift==='夜勤明け') continue;
-              if(reqsNC.includes(d)) continue;
-              const nextShift=data[s.id][d+1]||'';
-              if(nextShift==='夜勤') continue;
-              data[s.id][d]='日勤';
-              excess--;
-            }
+        // それでも足りない場合は月末を夜勤（月またぎ）
+        if(excess>0&&data[s.id][days]==='休み'&&!reqsNC.includes(days)){
+          const prevLast=data[s.id][days-1]||'';
+          if(prevLast!=='夜勤明け'&&prevLast!=='夜勤'){
+            data[s.id][days]='夜勤';
+            excess--;
           }
         }
       }

@@ -2210,14 +2210,12 @@ function genDraft(){
       
       if(offCount>targetOff){
         let excess=offCount-targetOff;
-        // 変更可能な休みを日勤に変換
+        // 変更可能な休みを日勤に変換（夜勤明け翌日のみ変更不可）
         for(let d=1;d<=days&&excess>0;d++){
           if(data[s.id][d]==='休み'){
             const prevShift=d>1?data[s.id][d-1]:'';
             if(prevShift==='夜勤明け') continue; // 夜勤明け翌日は変更不可
             if(reqsNC.includes(d)) continue;     // 希望休は変更不可
-            const nextShift=d<days?data[s.id][d+1]:'';
-            if(nextShift==='夜勤') continue;     // 夜勤前日は変更不可
             data[s.id][d]='日勤';
             excess--;
           }
@@ -2229,8 +2227,6 @@ function genDraft(){
               const prevShift=d>1?data[s.id][d-1]:'';
               if(prevShift==='夜勤明け') continue;
               if(reqsNC.includes(d)) continue;
-              const nextShift=d<days?data[s.id][d+1]:'';
-              if(nextShift==='夜勤') continue;
               data[s.id][d]='日勤';
               excess--;
             }

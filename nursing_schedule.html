@@ -2139,22 +2139,30 @@ function genDraft(){
     }
     if(s.nightCenter&&s.employment!=='part'){
       // 夜勤専従正社員: 空きを休みにした後、所定休日9日になるよう調整
+      const reqsNC=getReqs(y,m,s.id);
+      const rtypesNC=getReqTypes(y,m,s.id);
+      // まず空きを全て休みにする
       for(let d=1;d<=days;d++) if(!data[s.id][d]) data[s.id][d]='休み';
-      // 有給使用日数を確認（有給は所定休日数に含めない）
-      const reqs=getReqs(y,m,s.id);
-      const rtypes2=getReqTypes(y,m,s.id);
-      const nenkyuDays=reqs.filter(d=>rtypes2[d]==='nenkyuu').length;
-      // 所定休日（有給を除く）をカウント
+      // 所定休日（有給・夜勤明け翌日の固定休みを除く）をカウント
       let offCount=0;
-      for(let d=1;d<=days;d++) if(data[s.id][d]==='休み') offCount++;
-      // 目標: 所定休日数（有給は別）
+      for(let d=1;d<=days;d++){
+        if(data[s.id][d]==='休み') offCount++;
+      }
+      // targetOffを超えた分を日勤に変換
       if(offCount>targetOff){
         let excess=offCount-targetOff;
-        for(let d=1;d<=days&&excess>0;d++){
+        // 夜勤明けの翌日は変更不可、希望休は変更不可
+        // 余裕のある休みを後ろから日勤に変換
+        for(let d=days;d>=1&&excess>0;d--){
           if(data[s.id][d]==='休み'){
+            // 夜勤明けの翌日は変更不可
             const prevShift=d>1?data[s.id][d-1]:'';
             if(prevShift==='夜勤明け') continue;
-            if(reqs.includes(d)) continue;
+            // 希望休は変更不可
+            if(reqsNC.includes(d)) continue;
+            // 翌日が夜勤の場合は変更不可（夜勤前日は必要）
+            const nextShift=d<days?data[s.id][d+1]:'';
+            if(nextShift==='夜勤') continue;
             data[s.id][d]='日勤';
             excess--;
           }

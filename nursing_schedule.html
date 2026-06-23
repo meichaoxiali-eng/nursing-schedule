@@ -2271,6 +2271,13 @@ function genDraft(){
             }
           }
         }
+        // パス4: まだ多い場合、月末を夜勤にして翌月に持ち越す
+        if(excess>0&&data[s.id][days]==='休み'&&!reqsNC.includes(days)){
+          const prevLast=d=>data[s.id][d]||'';
+          // 月末が夜勤明け翌日の休みでも、月末を夜勤に変換して翌月1日を夜勤明けにする
+          data[s.id][days]='夜勤';
+          excess--;
+        }
       }
       return;
     }

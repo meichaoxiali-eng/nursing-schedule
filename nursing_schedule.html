@@ -813,11 +813,22 @@ function openReqTypeModal(day){
     showFlash(`希望休は月${MAX_REQ}日までです。すでに${reqs.length}日登録されています。`,'ab');
     return;
   }
-  // 重複チェック
-  const others=S.staffList.filter(s=>s.id!==sid);
-  const sameDay=others.filter(s=>getReqs(y,m,s.id).includes(day));
-  if(sameDay.length>=2){
-    showFlash(sameDay.slice(0,2).map(s=>s.name).join('・')+'と重複しています。\n必要であれば交渉してください。','ab');
+  // 同職種の重複チェック（看護・介護それぞれ同じ日は1人まで／週休・年休とも対象）
+  const _self=S.staffList.find(s=>s.id===sid);
+  const _conf=S.staffList.filter(s=>s.id!==sid&&s.type===_self.type&&getReqs(y,m,s.id).includes(day));
+  if(_conf.length>=1){
+    const _names=_conf.map(s=>s.name).join('・');
+    document.getElementById('modal-area').innerHTML=`
+    <div style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:600;display:flex;align-items:center;justify-content:center;padding:16px" onclick="closeReqModal()">
+      <div style="background:#fff;border-radius:16px;padding:22px 18px;width:100%;max-width:360px" onclick="event.stopPropagation()">
+        <div style="text-align:center;font-size:32px;margin-bottom:8px">⚠️</div>
+        <div style="font-size:15px;font-weight:600;text-align:center;margin-bottom:12px">${m+1}月${day}日は希望休を入れられません</div>
+        <div style="background:#FCEBEB;border:1px solid #F7C1C1;border-radius:10px;padding:12px 14px;font-size:13px;color:#791F1F;line-height:1.7;margin-bottom:16px">
+          ${_names}さんと重複しています。<br>変更可能か当人同士で相談してください。<br>どうしても調整できない場合は管理者に相談してください。
+        </div>
+        <button onclick="closeReqModal()" style="display:block;width:100%;padding:12px;background:#185FA5;color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer">OK</button>
+      </div>
+    </div>`;
     return;
   }
   const maxOff=monthOffDays(m);
@@ -1172,6 +1183,7 @@ function renderSchTab(y,m,data){
     prevType=s.type;
     const tcls=s.type==='nurse'?'ns':s.type==='care'?'cs':'bs2';
     const ct=counts(s.id);
+    const _reqsHi=getReqs(y,m,s.id);const _rtHi=getReqTypes(y,m,s.id);
     h+=`<tr>
       <td class="fn ${tcls}" title="${s.name}">${s.name.length>10?s.name.slice(0,10)+'…':s.name}</td>
       ${Array.from({length:days},(_,i)=>{
@@ -1179,9 +1191,11 @@ function renderSchTab(y,m,data){
         const sh=(data[s.id]||{})[d]||'';
         const violations=(data['_violations']||{});
         const isViol=violations[s.id]&&violations[s.id][d];
+        const isHiKyu=_reqsHi.includes(d)&&_rtHi[d]!=='nenkyuu';
         let colCls=w===6?'sat-col':(w===0||hol)?'sun-col':'';
-        const violStyle=isViol?'background:#FFD6E0!important;':'';
-        return `<td class="${colCls}" style="${violStyle}" onclick="openEdit(event,'${s.id}',${d})" title="${isViol?'⚠️条件違反（手動修正してください）':''}">${shBadge(sh)}${isViol?'<span style="font-size:7px;color:#A32D2D;display:block">要修正</span>':''}</td>`;
+        const cellStyle=isViol?'background:#FFD6E0!important;':((isHiKyu&&sh==='休み')?'background:#FFE680!important;':'');
+        const cellInner=(isHiKyu&&sh==='休み'&&!isViol)?'<span style="color:#000;font-weight:700;font-size:11px">希休</span>':shBadge(sh);
+        return `<td class="${colCls}" style="${cellStyle}" onclick="openEdit(event,'${s.id}',${d})" title="${isViol?'⚠️条件違反（手動修正してください）':(isHiKyu?'希望休':'')}">${cellInner}${isViol?'<span style="font-size:7px;color:#A32D2D;display:block">要修正</span>':''}</td>`;
       }).join('')}
       <td class="sc-cell">${ct.ko}</td>
       <td class="sc-cell">${ct.yu}</td>
@@ -2196,6 +2210,34 @@ function genDraft(){
   }
 
   // 夜勤→明け、明け→休み を全スタッフに強制（2パス）
+  for(let pass=0;pass<2;pass++){
+    S.staffList.filter(s=>s.type!=='bait').forEach(s=>{
+      for(let d=1;d<days;d++) if(data[s.id][d]==='夜勤')    data[s.id][d+1]='夜勤明け';
+      for(let d=1;d<days;d++) if(data[s.id][d]==='夜勤明け') data[s.id][d+1]='休み';
+    });
+  }
+
+  // ══════════════════════════════════════════════
+  // STEP2.5: 看護・介護ペア補修（片方しか夜勤がいない日は、もう片方を埋める）
+  //   必ず看護と介護の両方が夜勤に入るようにする。
+  //   人員不足で埋められない日は、埋まる側だけ残し、不足は充足チェック/アラートで警告。
+  // ══════════════════════════════════════════════
+  const baitNightOn=(d)=>S.staffList.some(s=>s.type==='bait'&&((S.requests[brk(y,m,s.id)]||{})[d]==='夜勤'));
+  const nurseCovered=(d)=>baitNightOn(d)||S.staffList.some(s=>s.type==='nurse'&&data[s.id][d]==='夜勤');
+  const careCovered =(d)=>S.staffList.some(s=>s.type==='care'&&data[s.id][d]==='夜勤');
+  for(let d=1;d<=days;d++){
+    // 介護はいるが看護がいない → 看護を1人補う
+    if(careCovered(d)&&!nurseCovered(d)){
+      const cand=sortByPriority(nurseNightStaff.filter(s=>canNight(s,d)),d);
+      if(cand.length>0) assignNight(cand[0],d);
+    }
+    // 看護はいるが介護がいない → 介護を1人補う
+    if(nurseCovered(d)&&!careCovered(d)){
+      const cand=sortByPriority(careNightStaff.filter(s=>canNight(s,d)),d);
+      if(cand.length>0) assignNight(cand[0],d);
+    }
+  }
+  // 補修で追加した夜勤の「明け・休み」を再強制
   for(let pass=0;pass<2;pass++){
     S.staffList.filter(s=>s.type!=='bait').forEach(s=>{
       for(let d=1;d<days;d++) if(data[s.id][d]==='夜勤')    data[s.id][d+1]='夜勤明け';

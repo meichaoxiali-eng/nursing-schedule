@@ -2272,11 +2272,14 @@ function genDraft(){
           }
         }
         // パス4: まだ多い場合、月末を夜勤にして翌月に持ち越す
-        if(excess>0&&data[s.id][days]==='休み'&&!reqsNC.includes(days)){
-          const prevLast=d=>data[s.id][d]||'';
-          // 月末が夜勤明け翌日の休みでも、月末を夜勤に変換して翌月1日を夜勤明けにする
-          data[s.id][days]='夜勤';
-          excess--;
+        if(excess>0&&!reqsNC.includes(days)){
+          const lastShift=data[s.id][days]||'';
+          // 月末が休みまたは空きなら夜勤に変換
+          if(lastShift==='休み'||lastShift===''){
+            data[s.id][days]='夜勤';
+            nc[s.id]++;
+            excess--;
+          }
         }
       }
       return;
@@ -2314,7 +2317,8 @@ function genDraft(){
     // フェーズ4: 休み数を targetOff に合わせる
     function offCount(){
       let n=0;
-      for(let d=1;d<=days;d++) if(data[s.id][d]==='休み'||data[s.id][d]==='有給') n++;
+      // 有給は所定休日数に含めない（別カウント）
+      for(let d=1;d<=days;d++) if(data[s.id][d]==='休み') n++;
       return n;
     }
 

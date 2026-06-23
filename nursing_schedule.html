@@ -1996,6 +1996,22 @@ function genDraft(){
   });
 
   // ══════════════════════════════════════════════
+  // STEP1.5: 月またぎ処理（前月末が夜勤なら当月1日を夜勤明けに設定）
+  // ══════════════════════════════════════════════
+  S.staffList.filter(s=>s.nightCenter&&s.employment!=='part'&&s.type!=='bait').forEach(s=>{
+    // 前月のスケジュールを確認
+    const prevM=m===0?11:m-1;
+    const prevY=m===0?y-1:y;
+    const prevDays=dim(prevY,prevM);
+    const prevSch=S.schedules[sk(prevY,prevM)]||{};
+    const prevLastShift=(prevSch[s.id]||{})[prevDays]||'';
+    if(prevLastShift==='夜勤'){
+      // 前月末が夜勤なら当月1日を夜勤明けに設定
+      data[s.id][1]='夜勤明け';
+    }
+  });
+
+  // ══════════════════════════════════════════════
   // STEP2: 各スタッフの夜勤を個別に割り当て
   // ══════════════════════════════════════════════
   const nc={};
@@ -2058,6 +2074,10 @@ function genDraft(){
     if(data[s.id][d]==='休み') return false;
     if(nc[s.id]>=s.nightMax)   return false;
     if(d>1&&data[s.id][d-1]==='夜勤') return false;
+    // 夜勤専従正社員: 夜勤明けの翌日に夜勤を入れることで連続パターン（夜明夜明）を作る
+    if(s.nightCenter&&s.employment!=='part'&&d>1&&data[s.id][d-1]==='夜勤明け'){
+      // 連続パターン制御はこの下で実施（ここではブロックしない）
+    } else if(d>1&&data[s.id][d-1]==='夜勤明け'&&!s.nightCenter) return false;
     // 夜勤専従正社員の連続パターン制御（夜明が連続する=休みなし連続）
     if(s.nightCenter&&s.employment!=='part'){
       // d日が夜勤になった場合、d+1日は夜勤明けになる
@@ -2200,7 +2220,7 @@ function genDraft(){
       return;
     }
     if(s.nightCenter&&s.employment!=='part'){
-      // 夜勤専従正社員: 所定休日9日になるよう調整
+      // 夜勤専従正社員: 所定休日targetOff日になるよう調整
       const reqsNC=getReqs(y,m,s.id);
       // まず空きを全て休みにする
       for(let d=1;d<=days;d++) if(!data[s.id][d]) data[s.id][d]='休み';
@@ -2210,7 +2230,8 @@ function genDraft(){
       
       if(offCount>targetOff){
         let excess=offCount-targetOff;
-        // 変更可能な休みを日勤に変換（夜勤明け翌日のみ変更不可）
+        
+        // パス1: 通常の変更可能な休みを日勤に変換
         for(let d=1;d<=days&&excess>0;d++){
           if(data[s.id][d]==='休み'){
             const prevShift=d>1?data[s.id][d-1]:'';
@@ -2220,7 +2241,25 @@ function genDraft(){
             excess--;
           }
         }
-        // まだ多い場合は逆順でも試みる
+        
+        // パス2: まだ多い場合、夜勤明けを日勤に変換して前後を調整
+        // 夜→明→休のセットを夜→日→休に変えて休みを1つ解放
+        if(excess>0){
+          for(let d=2;d<days&&excess>0;d++){
+            if(data[s.id][d]==='夜勤明け'){
+              const prevShift=data[s.id][d-1]||'';
+              const nextShift=data[s.id][d+1]||'';
+              // 夜勤→夜勤明け→休みのセット
+              if(prevShift==='夜勤'&&nextShift==='休み'&&!reqsNC.includes(d+1)){
+                data[s.id][d]='日勤'; // 夜勤明けを日勤に
+                data[s.id][d+1]='日勤'; // 翌日の休みも日勤に
+                excess-=2; // 2日分減らせる（休みが2つ消える）
+              }
+            }
+          }
+        }
+        
+        // パス3: まだ多い場合逆順で再試行
         if(excess>0){
           for(let d=days;d>=1&&excess>0;d--){
             if(data[s.id][d]==='休み'){
@@ -2230,14 +2269,6 @@ function genDraft(){
               data[s.id][d]='日勤';
               excess--;
             }
-          }
-        }
-        // それでも足りない場合は月末を夜勤（月またぎ）
-        if(excess>0&&data[s.id][days]==='休み'&&!reqsNC.includes(days)){
-          const prevLast=data[s.id][days-1]||'';
-          if(prevLast!=='夜勤明け'&&prevLast!=='夜勤'){
-            data[s.id][days]='夜勤';
-            excess--;
           }
         }
       }

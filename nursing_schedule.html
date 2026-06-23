@@ -2220,66 +2220,46 @@ function genDraft(){
       return;
     }
     if(s.nightCenter&&s.employment!=='part'){
-      // 夜勤専従正社員: 所定休日targetOff日になるよう調整
+      // 夜勤専従正社員: 所定休日を必ずtargetOff日に収束させる
       const reqsNC=getReqs(y,m,s.id);
       // まず空きを全て休みにする
       for(let d=1;d<=days;d++) if(!data[s.id][d]) data[s.id][d]='休み';
-      // 現在の休み数をカウント
-      let offCount=0;
-      for(let d=1;d<=days;d++) if(data[s.id][d]==='休み') offCount++;
-      
-      if(offCount>targetOff){
-        let excess=offCount-targetOff;
-        
-        // パス1: 通常の変更可能な休みを日勤に変換
-        for(let d=1;d<=days&&excess>0;d++){
-          if(data[s.id][d]==='休み'){
-            const prevShift=d>1?data[s.id][d-1]:'';
-            if(prevShift==='夜勤明け') continue; // 夜勤明け翌日は変更不可
-            if(reqsNC.includes(d)) continue;     // 希望休は変更不可
-            data[s.id][d]='日勤';
-            excess--;
-          }
-        }
-        
-        // パス2: まだ多い場合、夜勤明けを日勤に変換して前後を調整
-        // 夜→明→休のセットを夜→日→休に変えて休みを1つ解放
-        if(excess>0){
-          for(let d=2;d<days&&excess>0;d++){
-            if(data[s.id][d]==='夜勤明け'){
-              const prevShift=data[s.id][d-1]||'';
-              const nextShift=data[s.id][d+1]||'';
-              // 夜勤→夜勤明け→休みのセット
-              if(prevShift==='夜勤'&&nextShift==='休み'&&!reqsNC.includes(d+1)){
-                data[s.id][d]='日勤'; // 夜勤明けを日勤に
-                data[s.id][d+1]='日勤'; // 翌日の休みも日勤に
-                excess-=2; // 2日分減らせる（休みが2つ消える）
-              }
-            }
-          }
-        }
-        
-        // パス3: まだ多い場合逆順で再試行
-        if(excess>0){
-          for(let d=days;d>=1&&excess>0;d--){
-            if(data[s.id][d]==='休み'){
-              const prevShift=d>1?data[s.id][d-1]:'';
-              if(prevShift==='夜勤明け') continue;
-              if(reqsNC.includes(d)) continue;
-              data[s.id][d]='日勤';
-              excess--;
-            }
-          }
-        }
-        // パス4: まだ多い場合、月末を夜勤にして翌月に持ち越す
-        if(excess>0&&!reqsNC.includes(days)){
-          const lastShift=data[s.id][days]||'';
-          // 月末が休みまたは空きなら夜勤に変換
-          if(lastShift==='休み'||lastShift===''){
-            data[s.id][days]='夜勤';
-            nc[s.id]++;
-            excess--;
-          }
+
+      const isOff=d=>data[s.id][d]==='休み';
+      const cntOff=()=>{let n=0;for(let d=1;d<=days;d++)if(isOff(d))n++;return n;};
+      // 変換可能＝休み かつ 希望休でない かつ 夜勤明けの翌日でない（独立した休み）
+      const convertible=d=>isOff(d)&&!reqsNC.includes(d)&&!(d>1&&data[s.id][d-1]==='夜勤明け');
+
+      let off=cntOff();
+
+      // ── 休みが多い場合: targetOffまで削減 ──
+      // (A) 月またぎ優先: 月末が「夜→明→休」セットなら月末を夜勤化し、
+      //     翌月へ夜勤明けを持ち越す（純粋な夜勤サイクルを保ったまま休みを1減らす）
+      if(off>targetOff && days>=3 && !reqsNC.includes(days)
+         && data[s.id][days]==='休み'
+         && data[s.id][days-1]==='夜勤明け'
+         && data[s.id][days-2]==='夜勤'){
+        data[s.id][days]='夜勤';
+        nc[s.id]++;
+        off--;
+      }
+
+      // (B) 独立した休み（夜勤明け翌日でない）を日勤に変換
+      for(let d=1; d<=days && off>targetOff; d++){
+        if(convertible(d)){ data[s.id][d]='日勤'; off--; }
+      }
+
+      // (C) それでも多い場合（夜勤明け翌日の休みしか残らない）:
+      //     月末側から夜勤明けセットの休みを日勤に変換（最終手段・必ず収束）
+      for(let d=days; d>=1 && off>targetOff; d--){
+        if(isOff(d) && !reqsNC.includes(d)){ data[s.id][d]='日勤'; off--; }
+      }
+
+      // ── 休みが少ない場合: targetOffまで増やす ──
+      // (D) 月末側の日勤を休みに（夜勤の直前は避ける）
+      for(let d=days; d>=1 && off<targetOff; d--){
+        if(data[s.id][d]==='日勤' && !(d<days && data[s.id][d+1]==='夜勤')){
+          data[s.id][d]='休み'; off++;
         }
       }
       return;

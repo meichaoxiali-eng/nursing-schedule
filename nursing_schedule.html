@@ -235,29 +235,23 @@ async function sbPushAll(){
     const rows=Object.keys(allData).map(k=>{
       return {key:k,value:JSON.stringify(allData[k])};
     });
-    const res=await fetch(SUPABASE_URL+'/rest/v1/nursing_data',{
+    if(rows.length===0) return false; // 空データは送らない
+    // on_conflict=key を指定して upsert（新規の月も確実に「追加」される）
+    const res=await fetch(SUPABASE_URL+'/rest/v1/nursing_data?on_conflict=key',{
       method:'POST',
       headers:{
         'apikey':SUPABASE_KEY,
         'Authorization':'Bearer '+SUPABASE_KEY,
         'Content-Type':'application/json',
-        'Prefer':'return=minimal,resolution=merge-duplicates'
+        'Prefer':'resolution=merge-duplicates,return=minimal'
       },
       body:JSON.stringify(rows)
     });
+    // 保存が本当に成功したかを確認（失敗時は false を返して「失敗」と表示させる）
     if(!res.ok){
-      // 409の場合はPATCHで更新
-      for(const row of rows){
-        await fetch(SUPABASE_URL+'/rest/v1/nursing_data?key=eq.'+encodeURIComponent(row.key),{
-          method:'PATCH',
-          headers:{
-            'apikey':SUPABASE_KEY,
-            'Authorization':'Bearer '+SUPABASE_KEY,
-            'Content-Type':'application/json'
-          },
-          body:JSON.stringify({value:row.value})
-        });
-      }
+      const t=await res.text().catch(()=>'');
+      console.log('sbPushAll failed:',res.status,t);
+      return false;
     }
     return true;
   }catch(e){

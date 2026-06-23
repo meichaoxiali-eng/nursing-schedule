@@ -2013,6 +2013,13 @@ function genDraft(){
   function getMaxSets(s){
     if(s.nightCenter){
       // 夜勤専従: 月の日数から最大セット数を計算
+      if(s.employment!=='part'){
+        // 正社員: 所定休日targetOff日を守れる夜勤数に制限
+        // 夜勤n回の場合: 夜n日+明n日+休n日=3n日、残りdays-3n日=日勤
+        // 休みをtargetOff日にするには: n = targetOff
+        // → 最大夜勤数 = targetOff
+        return Math.min(s.nightMax, targetOff);
+      }
       return Math.min(s.nightMax, Math.floor(days/3)+1);
     }
     return 3; // 一般夜勤可: 月3セットまで

@@ -2051,19 +2051,32 @@ function genDraft(){
     if(data[s.id][d]==='休み') return false;
     if(nc[s.id]>=s.nightMax)   return false;
     if(d>1&&data[s.id][d-1]==='夜勤') return false;
-    // 夜勤専従正社員の連続パターン制御
+    // 夜勤専従正社員の連続パターン制御（夜明が連続する=休みなし連続）
     if(s.nightCenter&&s.employment!=='part'){
-      // 現在の連続セット数を確認
-      let curConsec=0;
-      for(let x=d-1;x>=1;x--){
-        if((data[s.id][x]||'')==='夜勤'&&(data[s.id][x+1]||'')==='夜勤明け') curConsec++;
-        else break;
+      // d日が夜勤になった場合、d+1日は夜勤明けになる
+      // その前のd-1日が夜勤明けかどうか確認（連続セット判定）
+      // 連続セット: 夜明|夜明 → 夜明けの翌日すぐ夜勤
+      const prevDay=d>1?data[s.id][d-1]:'';
+      const prev2Day=d>2?data[s.id][d-2]:'';
+      
+      // 直前が夜勤明けの場合（連続セット開始）
+      if(prevDay==='夜勤明け'){
+        // 連続セット数をカウント
+        let consecCount=1; // 今回が1セット目の連続
+        for(let x=d-3;x>=1;x-=2){
+          if((data[s.id][x]||'')==='夜勤'&&(data[s.id][x+1]||'')==='夜勤明け'){
+            consecCount++;
+          } else break;
+        }
+        // 又吉博秋: 2連続まで（3連続不可）
+        if(s.id==='bait-m'&&consecCount>=2) return false;
+        // 新垣・新里: 3連続まで、ただし月1回のみ
+        if(s.id!=='bait-m'&&consecCount>=3) return false;
+        if(s.id!=='bait-m'&&consecCount>=2){
+          // 既に月内で3連続パターンがあるか確認
+          if(count3Sets(s.id)>=1) return false;
+        }
       }
-      // 又吉博秋（bait-m）: 2連続まで
-      if(s.id==='bait-m'&&curConsec>=2) return false;
-      // 新垣・新里: 3連続は月1回まで
-      if(s.id!=='bait-m'&&curConsec>=3) return false;
-      if(s.id!=='bait-m'&&curConsec>=2&&count3Sets(s.id)>=1) return false;
     }
     // 翌日に夜勤明け以外の確定シフトがある場合は不可
     if(d<days){

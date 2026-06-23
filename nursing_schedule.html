@@ -1982,9 +1982,14 @@ function genDraft(){
   S.staffList.forEach(s=>{
     if(s.type==='bait') return;
     const reqs=getReqs(y,m,s.id);
+    const rtypes=getReqTypes(y,m,s.id);
     for(let d=1;d<=days;d++){
       const w=dow(y,m,d),wknd=(w===0||w===6);
-      if(reqs.includes(d))        data[s.id][d]='休み';
+      if(reqs.includes(d)){
+        // 年休希望は'有給'、週休希望は'休み'
+        const rtype=rtypes[d];
+        data[s.id][d]=(rtype==='nenkyuu')?'有給':'休み';
+      }
       else if(s.weekendOff&&wknd) data[s.id][d]='休み';
       else                        data[s.id][d]='';
     }
@@ -2133,21 +2138,22 @@ function genDraft(){
       return;
     }
     if(s.nightCenter&&s.employment!=='part'){
-      // 夜勤専従正社員: 空きを休みにした後、休日数が多すぎる場合は日勤に変換
+      // 夜勤専従正社員: 空きを休みにした後、所定休日9日になるよう調整
       for(let d=1;d<=days;d++) if(!data[s.id][d]) data[s.id][d]='休み';
-      // 現在の休み数を確認
+      // 有給使用日数を確認（有給は所定休日数に含めない）
+      const reqs=getReqs(y,m,s.id);
+      const rtypes2=getReqTypes(y,m,s.id);
+      const nenkyuDays=reqs.filter(d=>rtypes2[d]==='nenkyuu').length;
+      // 所定休日（有給を除く）をカウント
       let offCount=0;
       for(let d=1;d<=days;d++) if(data[s.id][d]==='休み') offCount++;
-      // 目標休日数を超えている場合、夜勤明け翌日以外の余分な休みを日勤に変換
+      // 目標: 所定休日数（有給は別）
       if(offCount>targetOff){
         let excess=offCount-targetOff;
         for(let d=1;d<=days&&excess>0;d++){
           if(data[s.id][d]==='休み'){
-            // 夜勤明けの翌日は固定休みなので変更不可
             const prevShift=d>1?data[s.id][d-1]:'';
             if(prevShift==='夜勤明け') continue;
-            // 希望休は変更不可
-            const reqs=getReqs(y,m,s.id);
             if(reqs.includes(d)) continue;
             data[s.id][d]='日勤';
             excess--;
@@ -2156,6 +2162,13 @@ function genDraft(){
       }
       return;
     }
+
+    // 有給使用日数を確認（有給は所定休日数に含めない）
+    const reqsS=getReqs(y,m,s.id);
+    const rtypesS=getReqTypes(y,m,s.id);
+    const nenkyuUsedS=reqsS.filter(d=>rtypesS[d]==='nenkyuu').length;
+    // 実際の所定休日目標（有給は別）
+    const effectiveTargetOff=targetOff; // 所定休日数は変わらない
 
     const maxRun=s.isKanri?5:4;
     const maxSetsDay=2;

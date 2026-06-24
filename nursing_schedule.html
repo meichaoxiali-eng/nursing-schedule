@@ -2762,13 +2762,19 @@ function printPDF(){
       spacer=`<tr><td colspan="${days+6}" style="height:3px;border:none;background:#f5f5f5"></td></tr>`;
     }
     prevType=s.type;
+    const _reqsHi=getReqs(y,m,s.id);const _rtHi=getReqTypes(y,m,s.id);
     const cells=Array.from({length:days},(_,i)=>{
       const d=i+1,sh=(schData[s.id]||{})[d]||'';
       const w=dow(y,m,d),hol=isHoliday(y,m,d);
       const isV=viols[s.id]&&viols[s.id][d];
+      const isHiKyu=_reqsHi.includes(d)&&_rtHi[d]!=='nenkyuu';
+      const showKi=isHiKyu&&sh==='休み'&&!isV;
       const colBg=w===6?'rgba(24,95,165,.1)':(w===0||hol)?'rgba(163,45,45,.1)':'';
-      const bg=isV?'#FFD6E0':sh?shBg(sh):colBg||'#fff';
-      return `<td style="border:0.5px solid #bbb;width:18px;height:16px;text-align:center;font-size:7px;background:${bg};color:${shFg(sh)};font-weight:700;-webkit-print-color-adjust:exact;print-color-adjust:exact">${shLbl(sh)}</td>`;
+      const bg=isV?'#FFD6E0':(showKi?'#FFE680':(sh?shBg(sh):colBg||'#fff'));
+      const fg=showKi?'#000':shFg(sh);
+      const lbl=showKi?'希休':shLbl(sh);
+      const fsz=showKi?'6px':'7px';
+      return `<td style="border:0.5px solid #bbb;width:18px;height:16px;text-align:center;font-size:${fsz};background:${bg};color:${fg};font-weight:700;-webkit-print-color-adjust:exact;print-color-adjust:exact">${lbl}</td>`;
     }).join('');
     return spacer+`<tr>
       <td style="border:0.5px solid #bbb;padding:1px 3px;font-size:8px;white-space:nowrap;border-left:3px solid ${tcol};min-width:65px;-webkit-print-color-adjust:exact;print-color-adjust:exact">${s.name}</td>
@@ -2818,6 +2824,7 @@ function printPDF(){
     <div class="leg"><div class="lb" style="background:#EF9F27"></div>明=夜勤明け</div>
     <div class="leg"><div class="lb" style="background:#EAF3DE;border-color:#3B6D11"></div>有=有給</div>
     <div class="leg"><div class="lb" style="background:#F0F0F0"></div>休=休み</div>
+    <div class="leg"><div class="lb" style="background:#FFE680"></div>希休=希望休</div>
     <div class="leg"><span style="color:#185FA5;font-weight:700">▌</span>看護師</div>
     <div class="leg"><span style="color:#3B6D11;font-weight:700">▌</span>介護士</div>
     <div class="leg"><span style="color:#854F0B;font-weight:700">▌</span>バイト</div>

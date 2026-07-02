@@ -2523,6 +2523,11 @@ function staffForm(s){
       <option value="fulltime"${(v.employment||'fulltime')==='fulltime'?' selected':''}>正社員（休日9日/2月8日）</option>
       <option value="part"${(v.employment||'')==='part'?' selected':''}>パート（休日数制限なし）</option>
     </select>
+  </div>
+  <div class="row-f" style="margin-top:8px">
+    <label style="font-size:12px;color:var(--txt2);margin-right:8px">1日の勤務時間</label>
+    <input id="sf-workhours" type="number" min="0" max="24" step="0.5" value="${v.workHours||8}" style="width:80px;padding:8px;border:1px solid var(--border);border-radius:8px;background:#fafafa;font-size:13px"> 時間
+    <span style="font-size:10px;color:var(--txt3);margin-left:6px">※パートは実勤務時間（例:6, 5.5）。常勤換算に使用</span>
   </div>`;
 }
 
@@ -2556,6 +2561,7 @@ function addStaff(){
     isKanri:document.getElementById('sf-iskanri').checked,
     empType:document.getElementById('sf-emptype')?.value||'A',
     employment:document.getElementById('sf-employment')?.value||'fulltime',
+    workHours:parseFloat(document.getElementById('sf-workhours')?.value)||8,
     dayOnly:false,
   });
   saveStaff();closeModal();
@@ -2575,6 +2581,7 @@ function editStaff(sid){
     isKanri:document.getElementById('sf-iskanri').checked,
     empType:document.getElementById('sf-emptype')?.value||'A',
     employment:document.getElementById('sf-employment')?.value||'fulltime',
+    workHours:parseFloat(document.getElementById('sf-workhours')?.value)||8,
   };
   saveStaff();closeModal();
 }
@@ -2638,6 +2645,10 @@ async function exportExcelByType(staffType){
   const days=dim(y,m);
   const shiftSym={'日勤':'日','A勤':'日','P勤':'日','夜勤':'夜','夜勤明け':'明','休み':'休','有給':'休','空白':''};
   const shiftHrs={'日勤':8.0,'A勤':4.0,'P勤':4.0,'夜勤':8.0,'夜勤明け':8.0,'休み':0,'有給':0,'空白':0};
+  // パートは日勤を実勤務時間(workHours)で計上。それ以外は標準時間
+  const hoursFor=(s,sh)=>{if(s.employment==='part'&&s.workHours>0&&sh==='日勤')return s.workHours;return shiftHrs[sh]||0;};
+  // パートで勤務形態がA/B(常勤)のままなら常勤換算の対象になるようC(非常勤)へ矯正
+  const empFor=(s)=>{let e=s.empType||'A';if(s.employment==='part'&&(e==='A'||e==='B'))e='C';return e;};
   const typeName=staffType==='nurse'?'看護':'介護';
   const orgName=staffType==='nurse'?'訪問看護はる':'訪問介護はる';
   const jobName=staffType==='nurse'?'看護職員':'介護職員';
@@ -2694,11 +2705,11 @@ async function exportExcelByType(staffType){
     const row=13+idx;
     if(row>30)return;
     ws2[encCell(row,3)]={v:jobName,t:'s'};       // C=3列: 職種
-    ws2[encCell(row,5)]={v:s.empType||'A',t:'s'}; // E=5列: 勤務形態
+    ws2[encCell(row,5)]={v:empFor(s),t:'s'};      // E=5列: 勤務形態（パートはC矯正）
     ws2[encCell(row,12)]={v:s.name,t:'s'};        // L=12列: 氏名
     for(let d=1;d<=days;d++){
       const sh=(schData[s.id]||{})[d]||'';
-      const hrs=shiftHrs[sh]||0;
+      const hrs=hoursFor(s,sh);
       // P列=16列目から各日 (P=16, Q=17, ...)
       ws2[encCell(row,15+d)]=hrs>0?{v:hrs,t:'n',z:'0.0'}:{v:'',t:'s'};
     }
@@ -2708,6 +2719,35 @@ async function exportExcelByType(staffType){
     [3,5,7,12].forEach(col=>{ws2[encCell(row,col)]={v:'',t:'s'};});
     for(let d=1;d<=days;d++) ws2[encCell(row,15+d)]={v:'',t:'s'};
   }
+
+  // === 常勤換算を実データで計算（記載例モデル: 常勤A/B=人数、非常勤C/D=時間数を常勤換算）===
+  const setF=(r,c,f)=>{ws2[encCell(r,c)]={t:'n',f};};
+  const setN=(r,c,v)=>{ws2[encCell(r,c)]={t:'n',v};};
+  ['A','B','C','D'].forEach((cls,i)=>{
+    const r=35+i;
+    setF(r,5,`SUMIFS($AU$13:$AV$30,$C$13:$D$30,"${jobName}",$E$13:$F$30,"${cls}")`); // E:勤務時間数合計
+    setF(r,7,`SUMIFS($AW$13:$AX$30,$C$13:$D$30,"${jobName}",$E$13:$F$30,"${cls}")`); // G:週平均
+  });
+  // 対象時間数 J/L: 常勤(A,B)=0、非常勤(C,D)=勤務時間数合計を参照
+  setN(35,10,0);setN(36,10,0);setF(37,10,'E37');setF(38,10,'E38');
+  setN(35,12,0);setN(36,12,0);setF(37,12,'G37');setF(38,12,'G38');
+  // 常勤換算方法対象外の常勤人数 P: A/Bの人数をカウント
+  setF(35,16,`COUNTIFS($C$13:$C$30,"${jobName}",$E$13:$E$30,"A")`);
+  setF(36,16,`COUNTIFS($C$13:$C$30,"${jobName}",$E$13:$E$30,"B")`);
+
+  // === 実データのシートだけ残し、実月名にリネーム＆先頭に配置 ===
+  const newStaff=`勤務表_${typeName}${m+1}月`, newSummary=`勤務形態一覧表${m+1}月`;
+  const sObj=wb.Sheets[staffSheetName], mObj=wb.Sheets[summarySheetName];
+  wb.Sheets={};wb.Sheets[newStaff]=sObj;wb.Sheets[newSummary]=mObj;
+  wb.SheetNames=[newStaff,newSummary];
+  wb.Workbook=wb.Workbook||{};
+  wb.Workbook.Sheets=[{Hidden:0},{Hidden:0}];
+  wb.Workbook.Names=[
+    {Name:'_xlnm.Print_Area',Sheet:0,Ref:`'${newStaff}'!$A$1:$AU$49`},
+    {Name:'_xlnm.Print_Area',Sheet:1,Ref:`'${newSummary}'!$A$1:$BD$50`},
+    {Name:'_xlnm.Print_Titles',Sheet:0,Ref:`'${newStaff}'!$1:$12`},
+    {Name:'_xlnm.Print_Titles',Sheet:1,Ref:`'${newSummary}'!$1:$12`},
+  ];
 
   // ダウンロード
   const wbout=XLSX.write(wb,{bookType:'xlsx',type:'array',cellStyles:true});

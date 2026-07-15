@@ -90,6 +90,10 @@ select.full{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3
 .tag.ns{background:var(--bl-lt);color:var(--bl-dk)}
 .tag.cs{background:var(--gr-lt);color:var(--gr-dk)}
 .tag.bs2{background:var(--am-lt);color:var(--am-dk)}
+.tag.tpt{background:#EDE7F6;color:#4527A0}
+.tag.tot{background:#FCE4EC;color:#AD1457}
+.tag.tst{background:#E0F2F1;color:#00695C}
+.tag.tkf{background:#FFF3E0;color:#E65100}
 /* Tab row */
 .tab-row{display:flex;gap:5px;margin-bottom:12px;overflow-x:auto;padding-bottom:2px;-webkit-overflow-scrolling:touch}
 .tab-row::-webkit-scrollbar{display:none}
@@ -110,6 +114,10 @@ select.full{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3
 .st td.fn.ns{border-left-color:var(--bl)}
 .st td.fn.cs{border-left-color:var(--gr)}
 .st td.fn.bs2{border-left-color:var(--am)}
+.st td.fn.tpt{border-left-color:#5E35B1}
+.st td.fn.tot{border-left-color:#D81B60}
+.st td.fn.tst{border-left-color:#00897B}
+.st td.fn.tkf{border-left-color:#FB8C00}
 .st td.cnt-c{background:#f9f9f9;font-weight:600;font-size:9px;cursor:default;text-align:center;color:#444}
 .st td.cnt-label{background:#e8e8e8;font-size:9px;font-weight:700;text-align:left;padding:2px 5px;cursor:default;color:#333}
 .st td.sat-col{background:rgba(24,95,165,.07)}
@@ -121,6 +129,8 @@ select.full{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3
 .sd{background:#E6F1FB;color:#0C447C;border-radius:3px;padding:1px 3px;font-size:9px;font-weight:700}
 .sn{background:#3C3489;color:#EEEDFE;border-radius:3px;padding:1px 3px;font-size:9px;font-weight:700}
 .sa{background:#EF9F27;color:#2d1c00;border-radius:3px;padding:1px 3px;font-size:9px;font-weight:700}
+.sb{background:#FFD700;color:#000;border-radius:3px;padding:1px 3px;font-size:9px;font-weight:700}
+.sl{background:#87CEEB;color:#FFEB3B;border-radius:3px;padding:1px 3px;font-size:9px;font-weight:700;text-shadow:0 0 2px rgba(0,0,0,.5)}
 .sr{background:#E8E8E8;color:#555;border-radius:3px;padding:1px 3px;font-size:9px}
 .sh{background:var(--am-lt);color:var(--am-dk);border-radius:3px;padding:1px 3px;font-size:9px;font-weight:700}
 .sy{background:#EAF3DE;color:#27500A;border-radius:3px;padding:1px 3px;font-size:9px;font-weight:700}
@@ -325,7 +335,34 @@ const DEFAULT_STAFF=[
   {id:'k-san',name:'Kさん（介護）',type:'care',nightOk:true,weekendOff:false,nightMax:4,dayOnly:false,nightCenter:false,nightOnly:false,isKanri:false,empType:'A',employment:'fulltime'},
 ];
 
-const SHIFTS=['日勤','A勤','P勤','夜勤','夜勤明け','休み','有給','空白'];
+const SHIFTS=['日勤','A勤','P勤','夜勤','夜勤明け','休み','有給','バースデー','リフレッシュ','空白'];
+// ── 職種の定義（看護グループ→介護グループの順で表示） ──
+const JOB_TYPES=[
+  {v:'nurse',lbl:'看護師',    cls:'ns', grp:'nurse'},
+  {v:'pt',   lbl:'理学療法士',cls:'tpt',grp:'nurse'},
+  {v:'ot',   lbl:'作業療法士',cls:'tot',grp:'nurse'},
+  {v:'st',   lbl:'言語聴覚士',cls:'tst',grp:'nurse'},
+  {v:'bait', lbl:'看護バイト',cls:'bs2',grp:'nurse'},
+  {v:'care', lbl:'介護士',    cls:'cs', grp:'care'},
+  {v:'kfuku',lbl:'介護福祉士',cls:'tkf',grp:'care'},
+];
+const TYPE_VALUES=JOB_TYPES.map(t=>t.v);
+const typeLbl=t=>(JOB_TYPES.find(x=>x.v===t)||{lbl:t}).lbl;
+const typeCls=t=>(JOB_TYPES.find(x=>x.v===t)||{cls:'ns'}).cls;
+const typeGrp=t=>(JOB_TYPES.find(x=>x.v===t)||{grp:'nurse'}).grp;
+// ローカル変数名と衝突する箇所用の別名
+const typeLbl_=t=>typeLbl(t);
+const typeCls_=t=>typeCls(t);
+// 夜勤に入る職種（新職種＝理学/作業/言語/介護福祉士 は日勤のみ）
+const NIGHT_TYPES=['nurse','care'];
+// 固定休み（曜日・祝祭日）の判定。fixedOffDays未設定の既存スタッフは weekendOff を土日として扱う
+function isFixedOffDay(s,y,m,d){
+  const w=dow(y,m,d);
+  const fx=Array.isArray(s.fixedOffDays)?s.fixedOffDays:(s.weekendOff?[0,6]:[]);
+  if(fx.includes(w)) return true;
+  if(s.holidayOff&&isHoliday(y,m,d)) return true;
+  return false;
+}
 const PW='sakura2024';
 const INPUT_START=10, INPUT_END=17, MAX_REQ=3;
 
@@ -594,9 +631,8 @@ function renderStaff(){
     <div class="card-t">スタッフ選択</div>
     <select class="full" onchange="selStaff(this.value)">
       <option value="">-- 自分の名前を選んでください --</option>
-      ${['nurse','care','bait'].map(type=>{
-        const lbl=type==='nurse'?'【看護師】':type==='care'?'【介護士】':'【看護バイト】';
-        return `<optgroup label="${lbl}">${S.staffList.filter(s=>s.type===type).map(s=>`<option value="${s.id}"${sid===s.id?' selected':''}>${s.name}</option>`).join('')}</optgroup>`;
+      ${JOB_TYPES.filter(t=>S.staffList.some(s=>s.type===t.v)).map(t=>{
+        return `<optgroup label="【${t.lbl}】">${S.staffList.filter(s=>s.type===t.v).map(s=>`<option value="${s.id}"${sid===s.id?' selected':''}>${s.name}</option>`).join('')}</optgroup>`;
       }).join('')}
     </select>
   </div>`;
@@ -606,8 +642,8 @@ function renderStaff(){
     :`<div class="inp-period">📅 希望入力期間は毎月 <strong>${INPUT_START}〜${INPUT_END}日</strong> です。<br>現在は入力期間外のため、閲覧のみ可能です。</div>`;
 
   if(sid&&staff){
-    const typeCls=staff.type==='nurse'?'ns':staff.type==='care'?'cs':'bs2';
-    const typeLbl=staff.type==='nurse'?'看護師':staff.type==='care'?'介護士':'看護バイト';
+    const typeCls=typeCls_(staff.type);
+    const typeLbl=typeLbl_(staff.type);
     h+=`<div class="card">
       <div class="card-t"><span class="tag ${typeCls}">${typeLbl}</span>&nbsp;${staff.name}</div>`;
 
@@ -628,6 +664,9 @@ function renderStaff(){
       <span>${y}年${m+1}月${isNextMonth?' <span style="font-size:10px;background:#185FA5;color:#fff;border-radius:4px;padding:1px 5px">翌月</span>':''}</span>
       <button onclick="chgMo(1)" style="${isNextMonth?'opacity:0.3;cursor:default':''}">›</button>
     </div>`;
+
+    // ===== 確定シフト（全員）表示：管理者が変更したら「最新に更新」で反映 =====
+    h+=renderStaffSchedule(y,m,sid);
 
     if(!inPeriod&&staff.type!=='bait'){
       h+=`<div class="ib" style="text-align:center;padding:20px 12px">入力期間（${INPUT_START}〜${INPUT_END}日）にお越しください<br><span style="font-size:11px;opacity:.7">現在の登録内容は閲覧できます</span></div>`;
@@ -770,6 +809,47 @@ function renderStaff(){
   el.innerHTML=h;
 }
 
+function renderStaffSchedule(y,m,sid){
+  const schData=S.schedules[sk(y,m)];
+  const days=dim(y,m);
+  const wl=['日','月','火','水','木','金','土'];
+  let h=`<div class="card" style="padding:8px 5px">
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:0 6px;margin-bottom:8px">
+      <div class="card-t" style="margin:0">📋 ${m+1}月の勤務表（全員）</div>
+      <button onclick="manualPullSB()" style="padding:5px 10px;border:1px solid #185FA5;border-radius:8px;background:#fff;color:#185FA5;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap">🔄 最新に更新</button>
+    </div>`;
+  if(!schData){
+    h+=`<div class="ib" style="margin:0 6px">まだ勤務表が作成・共有されていません。作成後、この画面で確認できます。</div></div>`;
+    return h;
+  }
+  h+=`<div style="font-size:10px;color:var(--txt3);padding:0 6px 6px;line-height:1.6">管理者がシフトを変更した場合は「最新に更新」を押すと反映されます。あなたの行は<span style="background:#FFF6C2;padding:0 3px">黄色</span>で表示されます。</div>`;
+  h+=`<div class="sw"><table class="st"><thead><tr><th class="fn">スタッフ</th>`;
+  for(let d=1;d<=days;d++){
+    const w=dow(y,m,d),hol=isHoliday(y,m,d);
+    const thCls=w===6?'sat-th':(w===0||hol)?'sun-th':'';
+    h+=`<th class="${thCls}">${d}<br>${wl[w]}${hol?'🎌':''}</th>`;
+  }
+  h+=`</tr></thead><tbody>`;
+  let prevType='';
+  S.staffList.forEach(s=>{
+    if(prevType&&typeGrp(prevType)==='nurse'&&typeGrp(s.type)==='care'){ h+=`<tr style="height:6px"><td class="fn" style="border:none;background:transparent" colspan="${days+1}"></td></tr>`; }
+    prevType=s.type;
+    const tcls=typeCls(s.type);
+    const isMe=s.id===sid;
+    const nameStyle=(s.employment==='part'?'border-left:4px solid #9C27B0;background:#F5EAFB!important;':'')+(isMe?'box-shadow:inset 0 0 0 2px #F0B400;':'');
+    h+=`<tr style="${isMe?'background:#FFF6C2':''}">`;
+    h+=`<td class="fn ${tcls}" style="${nameStyle}" title="${s.name}${s.workHours?' ('+s.workHours+')':''}">${s.name.length>8?s.name.slice(0,8)+'…':s.name}${s.employment==='part'?'<div style="font-size:8px;color:#7B1FA2;font-weight:600;line-height:1.2;white-space:normal">パート'+(s.workHours?' '+s.workHours:'')+'</div>':''}</td>`;
+    for(let d=1;d<=days;d++){
+      const w=dow(y,m,d),hol=isHoliday(y,m,d);
+      const sh=(schData[s.id]||{})[d]||'';
+      const colCls=w===6?'sat-col':(w===0||hol)?'sun-col':'';
+      h+=`<td class="${colCls}"${isMe?' style="background:#FFF6C2"':''}>${shBadge(sh)}</td>`;
+    }
+    h+=`</tr>`;
+  });
+  h+=`</tbody></table></div></div>`;
+  return h;
+}
 function selStaff(sid){S.selStaff=sid;render();}
 function chgMo(d){
   const today=new Date();
@@ -1085,9 +1165,8 @@ function renderReqList(y,m){
   const days=dim(y,m);
   let h=`<div class="card"><div class="card-t">全スタッフ希望休一覧・手動入力</div>
     <div class="ib" style="margin-bottom:10px">📝 各スタッフの名前横の「編集」から希望休を手動で追加・削除できます</div>`;
-  ['nurse','care','bait'].forEach(type=>{
-    const lbl=type==='nurse'?'看護師':type==='care'?'介護士':'看護バイト';
-    const cls=type==='nurse'?'ns':type==='care'?'cs':'bs2';
+  JOB_TYPES.filter(t=>S.staffList.some(s=>s.type===t.v)).forEach(t=>{
+    const type=t.v,lbl=t.lbl,cls=t.cls;
     h+=`<div style="font-size:11px;font-weight:700;color:var(--txt2);margin:10px 0 5px;padding-bottom:4px;border-bottom:2px solid var(--border)">${lbl}</div>`;
     S.staffList.filter(s=>s.type===type).forEach(s=>{
       const reqs=getReqs(y,m,s.id);
@@ -1118,6 +1197,14 @@ function renderReqList(y,m){
               ?'<span style="color:var(--txt3);font-size:11px">希望休なし</span>'
               :reqs.map(d=>{const t=rtypes2[d]||'off';return `<span class="req-dot" style="${t==='nenkyuu'?'background:#EAF3DE;color:#27500A':''}" title="${d}日(${t==='nenkyuu'?'年休':'週休'})">${d}</span>`;}).join('')}
           </div>
+          ${(()=>{const wf=getWelfare(y,m,s.id);const bd=(wf.birthday||[]),rf=(wf.refresh||[]);
+            return `<div style="display:flex;gap:4px;flex-wrap:wrap;width:100%;margin-top:3px;align-items:center">
+              <span style="font-size:10px;color:var(--txt3)">福利厚生：</span>
+              ${bd.length?bd.map(d=>`<span style="background:#FFD700;color:#000;border-radius:4px;padding:1px 5px;font-size:10px;font-weight:700">${d}バ</span>`).join(''):''}
+              ${rf.length?rf.map(d=>`<span style="background:#87CEEB;color:#FFEB3B;text-shadow:0 0 2px rgba(0,0,0,.5);border-radius:4px;padding:1px 5px;font-size:10px;font-weight:700">${d}リ</span>`).join(''):''}
+              ${(!bd.length&&!rf.length)?'<span style="color:var(--txt3);font-size:10px">なし</span>':''}
+              <button onclick="openWelfareEdit('${s.id}')" style="padding:2px 8px;border:1px solid #D9A8E8;border-radius:6px;background:#FDF4FF;color:#6B2E8A;font-size:10px;cursor:pointer;margin-left:auto">🌸 バ/リ入力</button>
+            </div>`;})()}
         </div>`;
       }
     });
@@ -1177,15 +1264,15 @@ function renderSchTab(y,m,data){
   let prevType='';
   S.staffList.forEach(s=>{
     // 看護師→介護士の切り替え時に空白行を挿入
-    if(prevType==='nurse'&&s.type==='care'){
+    if(prevType&&typeGrp(prevType)==='nurse'&&typeGrp(s.type)==='care'){
       h+=`<tr style="height:6px"><td class="fn" style="border:none;background:transparent" colspan="${days+6}"></td></tr>`;
     }
     prevType=s.type;
-    const tcls=s.type==='nurse'?'ns':s.type==='care'?'cs':'bs2';
+    const tcls=typeCls(s.type);
     const ct=counts(s.id);
     const _reqsHi=getReqs(y,m,s.id);const _rtHi=getReqTypes(y,m,s.id);
     h+=`<tr>
-      <td class="fn ${tcls}" title="${s.name}">${s.name.length>10?s.name.slice(0,10)+'…':s.name}</td>
+      <td class="fn ${tcls}" style="${s.employment==='part'?'border-left:4px solid #9C27B0;background:#F5EAFB!important':''}" title="${s.name}${s.workHours?' ('+s.workHours+')':''}">${s.name.length>10?s.name.slice(0,10)+'…':s.name}${s.employment==='part'?'<div style="font-size:8px;color:#7B1FA2;font-weight:600;line-height:1.2;white-space:normal">パート'+(s.workHours?' '+s.workHours:'')+'</div>':''}</td>
       ${Array.from({length:days},(_,i)=>{
         const d=i+1,w=dow(y,m,d),hol=isHoliday(y,m,d);
         const sh=(data[s.id]||{})[d]||'';
@@ -1335,9 +1422,8 @@ function renderAlertsTab(y,m,data){
 function renderStaffMgmt(){
   let h=`<div class="card"><div class="card-t">スタッフ管理</div>
     <button class="bp" style="margin-bottom:12px" onclick="openAddStaff()">＋ スタッフを追加</button>`;
-  ['nurse','care','bait'].forEach(type=>{
-    const lbl=type==='nurse'?'看護師':type==='care'?'介護士':'看護バイト';
-    const cls=type==='nurse'?'ns':type==='care'?'cs':'bs2';
+  JOB_TYPES.filter(t=>S.staffList.some(s=>s.type===t.v)).forEach(t=>{
+    const type=t.v,lbl=t.lbl,cls=t.cls;
     h+=`<div style="font-size:11px;font-weight:700;color:var(--txt2);margin:10px 0 5px;padding-bottom:4px;border-bottom:2px solid var(--border)">${lbl}</div>`;
     S.staffList.filter(s=>s.type===type).forEach(s=>{
       h+=`<div class="staff-item">
@@ -1346,7 +1432,7 @@ function renderStaffMgmt(){
             <span class="tag ${cls}">${lbl}</span>
             <span style="font-size:13px;font-weight:500">${s.name}</span>
           </div>
-          <span style="font-size:10px;color:var(--txt3)">夜勤${s.nightOk?'可':'不可'}${s.nightMax>0?' 上限'+s.nightMax+'回':''}${s.weekendOff?' 土日休':''}${s.isKanri?' 管理者(5連勤可)':''}　区分:${s.empType||'A'}　${s.employment==='part'?'パート':'正社員'}</span>
+          <span style="font-size:10px;color:var(--txt3)">夜勤${s.nightOk?'可':'不可'}${s.nightMax>0?' 上限'+s.nightMax+'回':''}${(()=>{const fx=Array.isArray(s.fixedOffDays)?s.fixedOffDays:(s.weekendOff?[0,6]:[]);const wl=['日','月','火','水','木','金','土'];return fx.length?' 固定休:'+fx.slice().sort().map(i=>wl[i]).join('')+(s.holidayOff?'+祝':''):(s.holidayOff?' 固定休:祝':'');})()}${s.dayOnly?' 日勤のみ':''}${s.isKanri?' 管理者(5連勤可)':''}　区分:${s.empType||'A'}　${s.employment==='part'?'パート':'正社員'}${s.workHours?'<br>🕒 '+s.workHours:''}${(parseFloat(s.dayHours)||8)!==8?'　<strong style="color:#7B1FA2">1日'+(parseFloat(s.dayHours)||8)+'時間</strong>':''}</span>
         </div>
         <div style="display:flex;gap:4px;flex-shrink:0">
           <button style="padding:5px 8px;border:1px solid var(--border);border-radius:7px;background:#fafafa;font-size:14px;cursor:pointer;line-height:1" onclick="moveStaff('${s.id}',-1)" title="上へ">↑</button>
@@ -1367,8 +1453,8 @@ function renderNenkyuMgmt(){
   S.staffList.forEach(s=>{
     if(s.type==='bait')return;
     const bal=getNenkyuBalance(s.id);
-    const typeCls=s.type==='nurse'?'ns':'cs';
-    const typeLbl=s.type==='nurse'?'看護師':'介護士';
+    const typeCls=typeCls_(s.type);
+    const typeLbl=typeLbl_(s.type);
     h+=`<div class="staff-item" style="flex-wrap:wrap;gap:6px">
       <div style="display:flex;align-items:center;gap:6px;flex:1">
         <span class="tag ${typeCls}" style="display:inline-block;padding:1px 7px;border-radius:20px;font-size:10px;font-weight:600">${typeLbl}</span>
@@ -1788,8 +1874,8 @@ function openReqEdit(sid){
     </div>`;
   }
   calH+=`</div>`;
-  const typeCls=staff.type==='nurse'?'ns':staff.type==='care'?'cs':'bs2';
-  const typeLbl=staff.type==='nurse'?'看護師':staff.type==='care'?'介護士':'看護バイト';
+  const typeCls=typeCls_(staff.type);
+  const typeLbl=typeLbl_(staff.type);
   document.getElementById('modal-area').innerHTML=`
   <div style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:500;display:flex;align-items:flex-end;justify-content:center;backdrop-filter:blur(2px)" onclick="closeModal()">
     <div style="background:#fff;border-radius:20px 20px 0 0;padding:20px 16px;width:100%;max-width:500px;max-height:90vh;overflow-y:auto" onclick="event.stopPropagation()">
@@ -1964,6 +2050,8 @@ function shBadge(sh){
     '休み':'<span class="sr">休</span>',
     '有給':'<span class="sy">有</span>',
     '希望休':'<span class="sh">希</span>',
+    'バースデー':'<span class="sb">バ</span>',
+    'リフレッシュ':'<span class="sl">リ</span>',
   }[sh]||sh;
 }
 
@@ -1991,15 +2079,20 @@ function genDraft(){
     if(s.type==='bait') return;
     const reqs=getReqs(y,m,s.id);
     const rtypes=getReqTypes(y,m,s.id);
+    // 福利厚生休暇（管理者が希望一覧で登録）：最優先。出勤扱いで所定休日・年休に影響しない
+    const wf=getWelfare(y,m,s.id);
+    const bdays=(wf.birthday||[]).map(Number);
+    const rdays=(wf.refresh||[]).map(Number);
     for(let d=1;d<=days;d++){
-      const w=dow(y,m,d),wknd=(w===0||w===6);
-      if(reqs.includes(d)){
+      if(bdays.includes(d))      data[s.id][d]='バースデー';
+      else if(rdays.includes(d)) data[s.id][d]='リフレッシュ';
+      else if(reqs.includes(d)){
         // 年休希望は'有給'、週休希望は'休み'
         const rtype=rtypes[d];
         data[s.id][d]=(rtype==='nenkyuu')?'有給':'休み';
       }
-      else if(s.weekendOff&&wknd) data[s.id][d]='休み';
-      else                        data[s.id][d]='';
+      else if(isFixedOffDay(s,y,m,d)) data[s.id][d]='休み';  // 土日/水曜等の固定休み・祝祭日
+      else                            data[s.id][d]='';
     }
   });
 
@@ -2015,7 +2108,8 @@ function genDraft(){
     const prevLastShift=(prevSch[s.id]||{})[prevDays]||'';
     if(prevLastShift==='夜勤'){
       // 前月末が夜勤なら当月1日を夜勤明けに設定
-      data[s.id][1]='夜勤明け';
+      // ただし1日に年休・福利厚生休暇がある場合は上書きしない
+      if(!['有給','バースデー','リフレッシュ'].includes(data[s.id][1])) data[s.id][1]='夜勤明け';
     }
   });
 
@@ -2078,8 +2172,15 @@ function genDraft(){
   }
 
   // その日に夜勤可能か
+  // 守るべき予定＝希望休/固定休み('休み')・年休('有給')・福利厚生('バースデー'/'リフレッシュ')
+  const KEEP=['休み','有給','バースデー','リフレッシュ'];
+  const KEEP2=['有給','バースデー','リフレッシュ']; // 「休み」で上書きされても実害がないものを除く
   function canNight(s,d){
-    if(data[s.id][d]==='休み') return false;
+    // d日=夜勤 → d+1日は必ず'夜勤明け'、d+2日は必ず'休み'で上書きされる。
+    // 上書きすると希望休・年休・福利厚生休暇が消えるため、その場合は夜勤を入れない。
+    if(KEEP.includes(data[s.id][d]))               return false;
+    if(d<days   && KEEP.includes(data[s.id][d+1])) return false;
+    if(d+1<days && KEEP2.includes(data[s.id][d+2])) return false;
     if(nc[s.id]>=s.nightMax)   return false;
     if(d>1&&data[s.id][d-1]==='夜勤') return false;
     // 夜勤専従正社員: 夜勤明けの翌日に夜勤を入れることで連続パターン（夜明夜明）を作る
@@ -2146,7 +2247,8 @@ function genDraft(){
   }
 
   // 夜勤可能なスタッフ全員を個別に処理
-  const nightStaff=S.staffList.filter(s=>s.nightOk&&s.type!=='bait');
+  // 夜勤に入れるのは看護・介護のみ（理学/作業/言語/介護福祉士は日勤のみ）。「日勤のみ」指定も除外
+  const nightStaff=S.staffList.filter(s=>s.nightOk&&!s.dayOnly&&NIGHT_TYPES.includes(s.type));
 
   // ── 夜勤配置の方針 ──
   // 毎日: 看護1名 + 介護1名 のペアを配置
@@ -2264,7 +2366,7 @@ function genDraft(){
       const isOff=d=>data[s.id][d]==='休み';
       const cntOff=()=>{let n=0;for(let d=1;d<=days;d++)if(isOff(d))n++;return n;};
       // 変換可能＝休み かつ 希望休でない かつ 夜勤明けの翌日でない（独立した休み）
-      const convertible=d=>isOff(d)&&!reqsNC.includes(d)&&!(d>1&&data[s.id][d-1]==='夜勤明け');
+      const convertible=d=>isOff(d)&&!reqsNC.includes(d)&&!isFixedOffDay(s,y,m,d)&&!(d>1&&data[s.id][d-1]==='夜勤明け');
 
       let off=cntOff();
 
@@ -2288,7 +2390,7 @@ function genDraft(){
       // (C) それでも多い場合（夜勤明け翌日の休みしか残らない）:
       //     月末側から夜勤明けセットの休みを日勤に変換（最終手段・必ず収束）
       for(let d=days; d>=1 && off>targetOff; d--){
-        if(isOff(d) && !reqsNC.includes(d)){ data[s.id][d]='日勤'; off--; }
+        if(isOff(d) && !reqsNC.includes(d) && !isFixedOffDay(s,y,m,d)){ data[s.id][d]='日勤'; off--; }
       }
 
       // ── 休みが少ない場合: targetOffまで増やす ──
@@ -2310,6 +2412,9 @@ function genDraft(){
 
     const maxRun=s.isKanri?5:4;
     const maxSetsDay=2;
+    // 固定休み（曜日・祝祭日）は日勤に戻さない＝確実に反映
+    const fixedSet=new Set();
+    for(let d=1;d<=days;d++) if(isFixedOffDay(s,y,m,d)) fixedSet.add(d);
 
     // フェーズ1: 空きを日勤に
     for(let d=1;d<=days;d++) if(!data[s.id][d]) data[s.id][d]='日勤';
@@ -2356,6 +2461,7 @@ function genDraft(){
       let done=false;
       for(let d=1;d<=days;d++){
         if(data[s.id][d]!=='休み') continue;
+        if(fixedSet.has(d)) continue; // 固定休みは維持
         if(d>1&&data[s.id][d-1]==='夜勤明け') continue;
         let before=0; for(let x=d-1;x>=1;x--){if(data[s.id][x]==='日勤')before++;else break;}
         let after=0;  for(let x=d+1;x<=days;x++){if(data[s.id][x]==='日勤')after++;else break;}
@@ -2379,7 +2485,9 @@ function genDraft(){
     const sp=getShiftPref(y,m,s.id);
     if(!sp||sp.day<1||sp.day>days) return;
     const cur=data[s.id][sp.day]||'';
-    if(['夜勤','夜勤明け','有給'].includes(cur)) return;
+    if(['夜勤','夜勤明け','有給','バースデー','リフレッシュ'].includes(cur)) return;
+    // 夜勤希望は翌日が'夜勤明け'で上書きされるため、翌日に守るべき予定があれば入れない
+    if(sp.shift==='夜勤'&&sp.day<days&&['有給','バースデー','リフレッシュ'].includes(data[s.id][sp.day+1]||'')) return;
     data[s.id][sp.day]=sp.shift;
     if(sp.shift==='夜勤'&&sp.day<days) data[s.id][sp.day+1]='夜勤明け';
   });
@@ -2493,18 +2601,41 @@ function setShift(sid,d,sh){
 function closeModal(){document.getElementById('modal-area').innerHTML='';render();}
 
 // Staff management
+// 働き方（固定休みの曜日・祝祭日・日勤のみ）を読み取る
+function readWorkStyle(){
+  const fixedOffDays=Array.from(document.querySelectorAll('.sf-wd'))
+    .filter(el=>el.checked).map(el=>parseInt(el.dataset.w));
+  return {
+    fixedOffDays,
+    weekendOff:fixedOffDays.includes(0)&&fixedOffDays.includes(6), // 既存表示との互換
+    holidayOff:document.getElementById('sf-holidayoff')?.checked||false,
+    dayOnly:document.getElementById('sf-dayonly')?.checked||false,
+  };
+}
 function staffForm(s){
   const v=s||{name:'',type:'nurse',nightOk:false,weekendOff:false,nightMax:0,nightCenter:false,nightOnly:false};
   return `
   <div class="row-f"><label>名前</label><input id="sf-name" value="${v.name||''}" placeholder="例：山田看護師" style="flex:1;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:#fafafa;color:var(--txt)"></div>
   <div class="row-f"><label>種別</label><select id="sf-type" style="flex:1;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:#fafafa">
-    <option value="nurse"${v.type==='nurse'?' selected':''}>看護師</option>
-    <option value="care"${v.type==='care'?' selected':''}>介護士</option>
-    <option value="bait"${v.type==='bait'?' selected':''}>看護バイト</option>
+    ${JOB_TYPES.map(t=>`<option value="${t.v}"${(v.type||'nurse')===t.v?' selected':''}>${t.lbl}</option>`).join('')}
   </select></div>
   <div class="row-f"><label>夜勤上限</label><input id="sf-nmax" type="number" min="0" max="15" value="${v.nightMax||0}" style="width:70px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:#fafafa"> 回/月</div>
   <label class="chk"><input type="checkbox" id="sf-nightok"${v.nightOk?' checked':''}> 夜勤可能</label>
-  <label class="chk"><input type="checkbox" id="sf-weekendoff"${v.weekendOff?' checked':''}> 土日基本休み</label>
+  <label class="chk"><input type="checkbox" id="sf-dayonly"${v.dayOnly?' checked':''}> 日勤のみ（夜勤に入れない）</label>
+  <div style="margin-top:8px;padding:8px 10px;background:#fafafa;border:1px solid var(--border);border-radius:8px">
+    <div style="font-size:12px;color:var(--txt2);font-weight:600;margin-bottom:6px">固定休み（毎週この曜日は必ず休み）</div>
+    <div style="display:flex;gap:4px;flex-wrap:wrap">
+      ${['日','月','火','水','木','金','土'].map((wl,i)=>{
+        const fx=Array.isArray(v.fixedOffDays)?v.fixedOffDays:(v.weekendOff?[0,6]:[]);
+        const on=fx.includes(i);
+        const c=i===0?'#A32D2D':i===6?'#185FA5':'var(--txt2)';
+        return `<label style="display:flex;align-items:center;gap:3px;font-size:12px;color:${c};border:1px solid var(--border);border-radius:6px;padding:4px 7px;background:#fff;cursor:pointer">
+          <input type="checkbox" class="sf-wd" data-w="${i}"${on?' checked':''}> ${wl}</label>`;
+      }).join('')}
+    </div>
+    <label class="chk" style="margin-top:6px"><input type="checkbox" id="sf-holidayoff"${v.holidayOff?' checked':''}> 祝祭日も固定休み</label>
+    <div style="font-size:10px;color:var(--txt3);margin-top:4px;line-height:1.5">例：土日固定休み → 土・日にチェック／水曜日固定休み → 水にチェック<br>ここで指定した休みはドラフト自動作成で必ず反映されます。</div>
+  </div>
   <label class="chk"><input type="checkbox" id="sf-nightcenter"${v.nightCenter?' checked':''}> 夜勤専従（夜勤中心）</label>
   <label class="chk"><input type="checkbox" id="sf-nightonly"${v.nightOnly?' checked':''}> 夜勤のみ（バイト等）</label>
   <label class="chk"><input type="checkbox" id="sf-iskanri"${v.isKanri?' checked':''}> 管理者（日勤連勤5日まで）</label>
@@ -2525,9 +2656,18 @@ function staffForm(s){
     </select>
   </div>
   <div class="row-f" style="margin-top:8px">
-    <label style="font-size:12px;color:var(--txt2);margin-right:8px">1日の勤務時間</label>
-    <input id="sf-workhours" type="number" min="0" max="24" step="0.5" value="${v.workHours||8}" style="width:80px;padding:8px;border:1px solid var(--border);border-radius:8px;background:#fafafa;font-size:13px"> 時間
-    <span style="font-size:10px;color:var(--txt3);margin-left:6px">※パートは実勤務時間（例:6, 5.5）。常勤換算に使用</span>
+    <label style="font-size:12px;color:var(--txt2);margin-right:8px">勤務時間<br><span style="font-size:10px;color:var(--txt3)">(パート等・任意)</span></label>
+    <input id="sf-workhours" value="${(v.workHours||'').replace(/"/g,'&quot;')}" placeholder="例：9:30〜16:00 / 午前のみ" style="flex:1;padding:8px;border:1px solid var(--border);border-radius:8px;background:#fafafa;font-size:13px">
+  </div>
+  <div class="row-f" style="margin-top:8px">
+    <label style="font-size:12px;color:var(--txt2);margin-right:8px">1日の<br>勤務時間数</label>
+    <input id="sf-dayhours" type="number" min="0" max="24" step="0.5" value="${v.dayHours!==undefined&&v.dayHours!==''?v.dayHours:8}" style="width:80px;padding:8px;border:1px solid var(--border);border-radius:8px;background:#fafafa;font-size:13px">
+    <span style="font-size:11px;color:var(--txt3);margin-left:6px">時間（日勤1回あたり）</span>
+  </div>
+  <div style="background:#F5EAFB;border-left:3px solid #9C27B0;border-radius:6px;padding:7px 9px;font-size:10px;color:#6B2E8A;line-height:1.6;margin-top:6px">
+    📊 Excel（勤務形態一覧表）の常勤換算はこの時間数から自動計算されます。<br>
+    正社員は <strong>8</strong>、パートは実際の時間（例：9:30〜16:00なら <strong>5.5</strong>、半日なら <strong>4</strong>）を入れてください。<br>
+    半日だけの日がある場合は、勤務表のセルを「A勤／P勤」にすると4時間で計算されます。
   </div>`;
 }
 
@@ -2555,14 +2695,15 @@ function addStaff(){
     type:document.getElementById('sf-type').value,
     nightMax:parseInt(document.getElementById('sf-nmax').value)||0,
     nightOk:document.getElementById('sf-nightok').checked,
-    weekendOff:document.getElementById('sf-weekendoff').checked,
+    ...readWorkStyle(),
     nightCenter:document.getElementById('sf-nightcenter').checked,
     nightOnly:document.getElementById('sf-nightonly').checked,
     isKanri:document.getElementById('sf-iskanri').checked,
     empType:document.getElementById('sf-emptype')?.value||'A',
     employment:document.getElementById('sf-employment')?.value||'fulltime',
-    workHours:parseFloat(document.getElementById('sf-workhours')?.value)||8,
-    dayOnly:false,
+    workHours:document.getElementById('sf-workhours')?.value.trim()||'',
+    dayHours:parseFloat(document.getElementById('sf-dayhours')?.value)||8,
+    dayHours:parseFloat(document.getElementById('sf-dayhours')?.value)||8,
   });
   saveStaff();closeModal();
 }
@@ -2575,13 +2716,13 @@ function editStaff(sid){
     type:document.getElementById('sf-type').value,
     nightMax:parseInt(document.getElementById('sf-nmax').value)||0,
     nightOk:document.getElementById('sf-nightok').checked,
-    weekendOff:document.getElementById('sf-weekendoff').checked,
+    ...readWorkStyle(),
     nightCenter:document.getElementById('sf-nightcenter').checked,
     nightOnly:document.getElementById('sf-nightonly').checked,
     isKanri:document.getElementById('sf-iskanri').checked,
+    workHours:document.getElementById('sf-workhours')?.value.trim()||'',
     empType:document.getElementById('sf-emptype')?.value||'A',
     employment:document.getElementById('sf-employment')?.value||'fulltime',
-    workHours:parseFloat(document.getElementById('sf-workhours')?.value)||8,
   };
   saveStaff();closeModal();
 }
@@ -2643,15 +2784,17 @@ async function exportExcelByType(staffType){
   if(!schData){showFlash('勤務表がありません','ab');return;}
   if(typeof XLSX==='undefined'){showFlash('ライブラリ読み込み中...少し待ってから再試行してください','wb');return;}
   const days=dim(y,m);
-  const shiftSym={'日勤':'日','A勤':'日','P勤':'日','夜勤':'夜','夜勤明け':'明','休み':'休','有給':'休','空白':''};
+  const shiftSym={'日勤':'日','A勤':'日','P勤':'日','夜勤':'夜','夜勤明け':'明','休み':'休','有給':'休','バースデー':'日','リフレッシュ':'日','空白':''};
   const shiftHrs={'日勤':8.0,'A勤':4.0,'P勤':4.0,'夜勤':8.0,'夜勤明け':8.0,'休み':0,'有給':0,'空白':0};
-  // パートは日勤を実勤務時間(workHours)で計上。それ以外は標準時間
-  const hoursFor=(s,sh)=>{if(s.employment==='part'&&s.workHours>0&&sh==='日勤')return s.workHours;return shiftHrs[sh]||0;};
-  // パートで勤務形態がA/B(常勤)のままなら常勤換算の対象になるようC(非常勤)へ矯正
-  const empFor=(s)=>{let e=s.empType||'A';if(s.employment==='part'&&(e==='A'||e==='B'))e='C';return e;};
+  // パート等：1日の勤務時間数をスタッフごとに反映（常勤換算は様式側で自動計算される）
+  const dayHoursOf=s=>{const v=parseFloat(s&&s.dayHours);return (isFinite(v)&&v>0)?v:8.0;};
+  // バースデー・リフレッシュ休暇は出勤扱い → 通常勤務と同じ時間数
+  const hoursFor=(s,sh)=>(sh==='日勤'||sh==='バースデー'||sh==='リフレッシュ')?dayHoursOf(s):(shiftHrs[sh]||0);
   const typeName=staffType==='nurse'?'看護':'介護';
   const orgName=staffType==='nurse'?'訪問看護はる':'訪問介護はる';
-  const jobName=staffType==='nurse'?'看護職員':'介護職員';
+  // 看護ファイル＝看護師+理学/作業/言語療法士、介護ファイル＝介護士+介護福祉士
+  const FILE_TYPES=staffType==='nurse'?['nurse','pt','ot','st']:['care','kfuku'];
+  const JOB_NAME={nurse:'看護職員',pt:'理学療法士',ot:'作業療法士',st:'言語聴覚士',care:'介護職員',kfuku:'介護福祉士'};
 
   // テンプレートを読み込む
   const binStr=atob(EXCEL_TEMPLATE_B64);
@@ -2666,7 +2809,7 @@ async function exportExcelByType(staffType){
   const ws2=wb.Sheets[summarySheetName];
 
   // 対象スタッフ
-  const staffs=S.staffList.filter(s=>s.type===staffType);
+  const staffs=S.staffList.filter(s=>FILE_TYPES.includes(s.type));
 
   // === 職員向けシート ===
   // 年(V2=行2,列22), 月(AC2=行2,列29)
@@ -2704,8 +2847,8 @@ async function exportExcelByType(staffType){
   staffs.forEach((s,idx)=>{
     const row=13+idx;
     if(row>30)return;
-    ws2[encCell(row,3)]={v:jobName,t:'s'};       // C=3列: 職種
-    ws2[encCell(row,5)]={v:empFor(s),t:'s'};      // E=5列: 勤務形態（パートはC矯正）
+    ws2[encCell(row,3)]={v:JOB_NAME[s.type]||'看護職員',t:'s'};       // C=3列: 職種
+    ws2[encCell(row,5)]={v:s.empType||'A',t:'s'}; // E=5列: 勤務形態
     ws2[encCell(row,12)]={v:s.name,t:'s'};        // L=12列: 氏名
     for(let d=1;d<=days;d++){
       const sh=(schData[s.id]||{})[d]||'';
@@ -2719,35 +2862,6 @@ async function exportExcelByType(staffType){
     [3,5,7,12].forEach(col=>{ws2[encCell(row,col)]={v:'',t:'s'};});
     for(let d=1;d<=days;d++) ws2[encCell(row,15+d)]={v:'',t:'s'};
   }
-
-  // === 常勤換算を実データで計算（記載例モデル: 常勤A/B=人数、非常勤C/D=時間数を常勤換算）===
-  const setF=(r,c,f)=>{ws2[encCell(r,c)]={t:'n',f};};
-  const setN=(r,c,v)=>{ws2[encCell(r,c)]={t:'n',v};};
-  ['A','B','C','D'].forEach((cls,i)=>{
-    const r=35+i;
-    setF(r,5,`SUMIFS($AU$13:$AV$30,$C$13:$D$30,"${jobName}",$E$13:$F$30,"${cls}")`); // E:勤務時間数合計
-    setF(r,7,`SUMIFS($AW$13:$AX$30,$C$13:$D$30,"${jobName}",$E$13:$F$30,"${cls}")`); // G:週平均
-  });
-  // 対象時間数 J/L: 常勤(A,B)=0、非常勤(C,D)=勤務時間数合計を参照
-  setN(35,10,0);setN(36,10,0);setF(37,10,'E37');setF(38,10,'E38');
-  setN(35,12,0);setN(36,12,0);setF(37,12,'G37');setF(38,12,'G38');
-  // 常勤換算方法対象外の常勤人数 P: A/Bの人数をカウント
-  setF(35,16,`COUNTIFS($C$13:$C$30,"${jobName}",$E$13:$E$30,"A")`);
-  setF(36,16,`COUNTIFS($C$13:$C$30,"${jobName}",$E$13:$E$30,"B")`);
-
-  // === 実データのシートだけ残し、実月名にリネーム＆先頭に配置 ===
-  const newStaff=`勤務表_${typeName}${m+1}月`, newSummary=`勤務形態一覧表${m+1}月`;
-  const sObj=wb.Sheets[staffSheetName], mObj=wb.Sheets[summarySheetName];
-  wb.Sheets={};wb.Sheets[newStaff]=sObj;wb.Sheets[newSummary]=mObj;
-  wb.SheetNames=[newStaff,newSummary];
-  wb.Workbook=wb.Workbook||{};
-  wb.Workbook.Sheets=[{Hidden:0},{Hidden:0}];
-  wb.Workbook.Names=[
-    {Name:'_xlnm.Print_Area',Sheet:0,Ref:`'${newStaff}'!$A$1:$AU$49`},
-    {Name:'_xlnm.Print_Area',Sheet:1,Ref:`'${newSummary}'!$A$1:$BD$50`},
-    {Name:'_xlnm.Print_Titles',Sheet:0,Ref:`'${newStaff}'!$1:$12`},
-    {Name:'_xlnm.Print_Titles',Sheet:1,Ref:`'${newSummary}'!$1:$12`},
-  ];
 
   // ダウンロード
   const wbout=XLSX.write(wb,{bookType:'xlsx',type:'array',cellStyles:true});
@@ -2767,9 +2881,9 @@ function printPDF(){
   if(!schData){showFlash('勤務表がありません','ab');return;}
   const days=dim(y,m);
   const wl=['日','月','火','水','木','金','土'];
-  const shBg=sh=>({'日勤':'#E6F1FB','A勤':'#C8E6FA','P勤':'#B3D4F7','夜勤':'#3C3489','夜勤明け':'#EF9F27','有給':'#EAF3DE','休み':'#F0F0F0','空白':'#fff'}[sh]||'#fff');
-  const shFg=sh=>({'夜勤':'#EEEDFE','夜勤明け':'#2d1c00','日勤':'#0C447C','A勤':'#0C447C','P勤':'#0C447C','有給':'#27500A','休み':'#888'}[sh]||'#333');
-  const shLbl=sh=>({'日勤':'日','A勤':'A','P勤':'P','夜勤':'夜','夜勤明け':'明','休み':'休','有給':'有','空白':''}[sh]||'');
+  const shBg=sh=>({'日勤':'#E6F1FB','A勤':'#C8E6FA','P勤':'#B3D4F7','夜勤':'#3C3489','夜勤明け':'#EF9F27','有給':'#EAF3DE','休み':'#F0F0F0','バースデー':'#FFD700','リフレッシュ':'#87CEEB','空白':'#fff'}[sh]||'#fff');
+  const shFg=sh=>({'夜勤':'#EEEDFE','夜勤明け':'#2d1c00','日勤':'#0C447C','A勤':'#0C447C','P勤':'#0C447C','有給':'#27500A','休み':'#888','バースデー':'#000','リフレッシュ':'#FFEB3B'}[sh]||'#333');
+  const shLbl=sh=>({'日勤':'日','A勤':'A','P勤':'P','夜勤':'夜','夜勤明け':'明','休み':'休','有給':'有','バースデー':'バ','リフレッシュ':'リ','空白':''}[sh]||'');
 
   function counts(sid){
     let ko=0,yu=0,ni=0,ya=0,ak=0;
@@ -2817,7 +2931,7 @@ function printPDF(){
       return `<td style="border:0.5px solid #bbb;width:18px;height:16px;text-align:center;font-size:${fsz};background:${bg};color:${fg};font-weight:700;-webkit-print-color-adjust:exact;print-color-adjust:exact">${lbl}</td>`;
     }).join('');
     return spacer+`<tr>
-      <td style="border:0.5px solid #bbb;padding:1px 3px;font-size:8px;white-space:nowrap;border-left:3px solid ${tcol};min-width:65px;-webkit-print-color-adjust:exact;print-color-adjust:exact">${s.name}</td>
+      <td style="border:0.5px solid #bbb;padding:1px 3px;font-size:8px;white-space:nowrap;border-left:3px solid ${s.employment==='part'?'#9C27B0':tcol};${s.employment==='part'?'background:#F5EAFB;':''}min-width:65px;-webkit-print-color-adjust:exact;print-color-adjust:exact">${s.name}${s.workHours?'<br><span style="font-size:6px;color:#7B1FA2;font-weight:600">🕒'+s.workHours+'</span>':''}</td>
       ${cells}
       <td style="border:0.5px solid #bbb;text-align:center;font-size:8px;background:#f9f9f9;width:14px">${ct.ko}</td>
       <td style="border:0.5px solid #bbb;text-align:center;font-size:8px;background:#f9f9f9;width:14px">${ct.yu}</td>
@@ -2865,6 +2979,9 @@ function printPDF(){
     <div class="leg"><div class="lb" style="background:#EAF3DE;border-color:#3B6D11"></div>有=有給</div>
     <div class="leg"><div class="lb" style="background:#F0F0F0"></div>休=休み</div>
     <div class="leg"><div class="lb" style="background:#FFE680"></div>希休=希望休</div>
+    <div class="leg"><div class="lb" style="background:#FFD700"></div>バ=バースデー休暇</div>
+    <div class="leg"><div class="lb" style="background:#87CEEB"></div>リ=リフレッシュ休暇</div>
+    <div class="leg"><span style="color:#9C27B0;font-weight:700">▌</span><span style="background:#F5EAFB;padding:0 3px">パート</span>(勤務時間は名前下に記載)</div>
     <div class="leg"><span style="color:#185FA5;font-weight:700">▌</span>看護師</div>
     <div class="leg"><span style="color:#3B6D11;font-weight:700">▌</span>介護士</div>
     <div class="leg"><span style="color:#854F0B;font-weight:700">▌</span>バイト</div>

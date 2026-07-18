@@ -365,11 +365,16 @@ const NIGHT_TYPES=['nurse','care'];
 // 固定休み（曜日・祝祭日）の判定。fixedOffDays未設定の既存スタッフは weekendOff を土日として扱う
 function isFixedOffDay(s,y,m,d){
   const w=dow(y,m,d);
+  // 出勤曜日を指定している場合、それ以外の曜日は休み
+  const wd=Array.isArray(s.workDays)?s.workDays:[];
+  if(wd.length>0 && !wd.includes(w)) return true;
   const fx=Array.isArray(s.fixedOffDays)?s.fixedOffDays:(s.weekendOff?[0,6]:[]);
   if(fx.includes(w)) return true;
   if(s.holidayOff&&isHoliday(y,m,d)) return true;
   return false;
 }
+// 出勤曜日を指定しているか（指定時は所定休日数の調整をしない＝その曜日だけ出勤）
+const hasWorkDays=s=>Array.isArray(s.workDays)&&s.workDays.length>0;
 const PW='sakura2024';
 const INPUT_START=10, INPUT_END=17, MAX_REQ=3;
 
@@ -1439,7 +1444,7 @@ function renderStaffMgmt(){
             <span class="tag ${cls}">${lbl}</span>
             <span style="font-size:13px;font-weight:500">${s.name}</span>
           </div>
-          <span style="font-size:10px;color:var(--txt3)">夜勤${s.nightOk?'可':'不可'}${s.nightMax>0?' 上限'+s.nightMax+'回':''}${(()=>{const fx=Array.isArray(s.fixedOffDays)?s.fixedOffDays:(s.weekendOff?[0,6]:[]);const wl=['日','月','火','水','木','金','土'];return fx.length?' 固定休:'+fx.slice().sort().map(i=>wl[i]).join('')+(s.holidayOff?'+祝':''):(s.holidayOff?' 固定休:祝':'');})()}${s.dayOnly?' 日勤のみ':''}${s.isKanri?' 管理者(5連勤可)':''}　区分:${s.empType||'A'}　${s.employment==='part'?'パート':'正社員'}${s.workHours?'<br>🕒 '+s.workHours:''}${(parseFloat(s.dayHours)||8)!==8?'　<strong style="color:#7B1FA2">1日'+(parseFloat(s.dayHours)||8)+'時間</strong>':''}</span>
+          <span style="font-size:10px;color:var(--txt3)">夜勤${s.nightOk?'可':'不可'}${s.nightMax>0?' 上限'+s.nightMax+'回':''}${(()=>{const wl=['日','月','火','水','木','金','土'];const wd=Array.isArray(s.workDays)?s.workDays:[];return wd.length?' <strong style="color:#27500A">出勤:'+wd.slice().sort().map(i=>wl[i]).join('')+'</strong>':'';})()}${(()=>{const fx=Array.isArray(s.fixedOffDays)?s.fixedOffDays:(s.weekendOff?[0,6]:[]);const wl=['日','月','火','水','木','金','土'];return fx.length?' 固定休:'+fx.slice().sort().map(i=>wl[i]).join('')+(s.holidayOff?'+祝':''):(s.holidayOff?' 固定休:祝':'');})()}${s.dayOnly?' 日勤のみ':''}${s.isKanri?' 管理者(5連勤可)':''}　区分:${s.empType||'A'}　${s.employment==='part'?'パート':'正社員'}${s.workHours?'<br>🕒 '+s.workHours:''}${(parseFloat(s.dayHours)||8)!==8?'　<strong style="color:#7B1FA2">1日'+(parseFloat(s.dayHours)||8)+'時間</strong>':''}</span>
         </div>
         <div style="display:flex;gap:4px;flex-shrink:0">
           <button style="padding:5px 8px;border:1px solid var(--border);border-radius:7px;background:#fafafa;font-size:14px;cursor:pointer;line-height:1" onclick="moveStaff('${s.id}',-1)" title="上へ">↑</button>
@@ -2423,9 +2428,11 @@ function genDraft(){
 
     const maxRun=s.isKanri?5:4;
     const maxSetsDay=2;
-    // 固定休み（曜日・祝祭日）は日勤に戻さない＝確実に反映
+    // 固定休み（曜日・祝祭日・出勤曜日以外）は日勤に戻さない＝確実に反映
     const fixedSet=new Set();
     for(let d=1;d<=days;d++) if(isFixedOffDay(s,y,m,d)) fixedSet.add(d);
+    // 希望休（週休）も日勤に戻さない＝確実に反映
+    const reqSet=new Set(getReqs(y,m,s.id));
 
     // フェーズ1: 空きを日勤に
     for(let d=1;d<=days;d++) if(!data[s.id][d]) data[s.id][d]='日勤';
@@ -2454,9 +2461,10 @@ function genDraft(){
       return n;
     }
 
+    // 出勤曜日を指定している場合は、その曜日だけ出勤するので所定休日数の調整はしない
     // 休みが足りない → 最長連勤末尾を休みへ
     let guard=200;
-    while(offCount()<targetOff&&guard-->0){
+    while(!hasWorkDays(s)&&offCount()<targetOff&&guard-->0){
       let bestEnd=-1,bestLen=0,curRun=0;
       for(let d=1;d<=days;d++){
         if(data[s.id][d]==='日勤'){ curRun++; if(curRun>bestLen){bestLen=curRun;bestEnd=d;} }
@@ -2468,11 +2476,12 @@ function genDraft(){
 
     // 休みが多い → 連勤上限内で休みを日勤に戻す
     guard=200;
-    while(offCount()>targetOff&&guard-->0){
+    while(!hasWorkDays(s)&&offCount()>targetOff&&guard-->0){
       let done=false;
       for(let d=1;d<=days;d++){
         if(data[s.id][d]!=='休み') continue;
         if(fixedSet.has(d)) continue; // 固定休みは維持
+        if(reqSet.has(d)) continue;   // 希望休は維持（日勤に戻さない）
         if(d>1&&data[s.id][d-1]==='夜勤明け') continue;
         let before=0; for(let x=d-1;x>=1;x--){if(data[s.id][x]==='日勤')before++;else break;}
         let after=0;  for(let x=d+1;x<=days;x++){if(data[s.id][x]==='日勤')after++;else break;}
@@ -2647,7 +2656,10 @@ function closeModal(){document.getElementById('modal-area').innerHTML='';render(
 function readWorkStyle(){
   const fixedOffDays=Array.from(document.querySelectorAll('.sf-wd'))
     .filter(el=>el.checked).map(el=>parseInt(el.dataset.w));
+  const workDays=Array.from(document.querySelectorAll('.sf-work'))
+    .filter(el=>el.checked).map(el=>parseInt(el.dataset.w));
   return {
+    workDays,
     fixedOffDays,
     weekendOff:fixedOffDays.includes(0)&&fixedOffDays.includes(6), // 既存表示との互換
     holidayOff:document.getElementById('sf-holidayoff')?.checked||false,
@@ -2664,6 +2676,19 @@ function staffForm(s){
   <div class="row-f"><label>夜勤上限</label><input id="sf-nmax" type="number" min="0" max="15" value="${v.nightMax||0}" style="width:70px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:#fafafa"> 回/月</div>
   <label class="chk"><input type="checkbox" id="sf-nightok"${v.nightOk?' checked':''}> 夜勤可能</label>
   <label class="chk"><input type="checkbox" id="sf-dayonly"${v.dayOnly?' checked':''}> 日勤のみ（夜勤に入れない）</label>
+  <div style="margin-top:8px;padding:8px 10px;background:#F1F8E9;border:1px solid #C0DD97;border-radius:8px">
+    <div style="font-size:12px;color:#27500A;font-weight:600;margin-bottom:6px">出勤する曜日（パート等・指定した曜日だけ出勤）</div>
+    <div style="display:flex;gap:4px;flex-wrap:wrap">
+      ${['日','月','火','水','木','金','土'].map((wl,i)=>{
+        const wd=Array.isArray(v.workDays)?v.workDays:[];
+        const on=wd.includes(i);
+        const c=i===0?'#A32D2D':i===6?'#185FA5':'var(--txt2)';
+        return `<label style="display:flex;align-items:center;gap:3px;font-size:12px;color:${c};border:1px solid var(--border);border-radius:6px;padding:4px 7px;background:#fff;cursor:pointer">
+          <input type="checkbox" class="sf-work" data-w="${i}"${on?' checked':''}> ${wl}</label>`;
+      }).join('')}
+    </div>
+    <div style="font-size:10px;color:#4b7018;margin-top:4px;line-height:1.5">例：月・水・金だけ出勤 → 月水金にチェック（他の曜日は自動で休み）<br>指定なし（どこにもチェックしない）＝これまでどおり全曜日が出勤対象です。</div>
+  </div>
   <div style="margin-top:8px;padding:8px 10px;background:#fafafa;border:1px solid var(--border);border-radius:8px">
     <div style="font-size:12px;color:var(--txt2);font-weight:600;margin-bottom:6px">固定休み（毎週この曜日は必ず休み）</div>
     <div style="display:flex;gap:4px;flex-wrap:wrap">

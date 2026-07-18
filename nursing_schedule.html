@@ -375,6 +375,36 @@ function isFixedOffDay(s,y,m,d){
 }
 // 出勤曜日を指定しているか（指定時は所定休日数の調整をしない＝その曜日だけ出勤）
 const hasWorkDays=s=>Array.isArray(s.workDays)&&s.workDays.length>0;
+
+// ══════════════════════════════════════════════
+//  日勤帯の必要人数
+//   ・毎月第2・第4木曜（訪問診療の利用者が多い日）        → 6人
+//   ・1〜10日の平日（レセプト作成で多忙な時期／祝日は除く） → 6人
+//   ・水曜／土日祝                                       → 4人
+//   ・その他の平日                                       → 5人
+//  数えるのは「8時間勤務の人」（常勤＋8時間勤務の非常勤）。
+//  短時間パート・件数制・バイトは人数に数えない。
+// ══════════════════════════════════════════════
+function nthThursdays(y,m){
+  const out=[],dm=dim(y,m);
+  for(let d=1;d<=dm;d++) if(dow(y,m,d)===4) out.push(d);
+  return out;
+}
+function requiredDay(y,m,d){
+  const w=dow(y,m,d),hol=isHoliday(y,m,d);
+  if(hol||w===0||w===6) return 4;               // 土日祝
+  const th=nthThursdays(y,m);
+  if(d===th[1]||d===th[3]) return 6;            // 第2・第4木曜
+  if(d<=10) return 6;                           // 1〜10日の平日
+  if(w===3) return 4;                           // 水曜
+  return 5;
+}
+// 日勤帯の人数に数えるスタッフ（8時間勤務＝常勤や8時間の非常勤）
+const isFullDayStaff=s=>!!s&&s.type!=='bait'&&!s.byCase&&(parseFloat(s.dayHours)||8)>=8;
+// その日の日勤人数（8時間勤務者のみ）
+function dayStaffCount(data,d){
+  return S.staffList.filter(s=>isFullDayStaff(s)&&(data[s.id]||{})[d]==='日勤').length;
+}
 const PW='sakura2024';
 const INPUT_START=10, INPUT_END=17, MAX_REQ=3;
 
@@ -1255,7 +1285,7 @@ function renderSchTab(y,m,data){
     }
     return{ko,yu,ni,ya,ak};
   }
-  const dayArr=Array.from({length:days},(_,i)=>S.staffList.filter(s=>(data[s.id]||{})[i+1]==='日勤').length);
+  const dayArr=Array.from({length:days},(_,i)=>dayStaffCount(data,i+1));
 
   let h=`<div style="display:flex;gap:8px;margin-bottom:10px">
     <button class="bs" style="flex:1;margin-top:0" onclick="printPDF()">🖨 PDF印刷</button>
@@ -1308,7 +1338,7 @@ function renderSchTab(y,m,data){
     <td class="fn cnt-label">日勤人数</td>
     ${dayArr.map((cnt,i)=>{
       const d=i+1,w=dow(y,m,d),hol=isHoliday(y,m,d);
-      const minDay=(w===3||w===6||w===0||hol)?4:5;
+      const minDay=requiredDay(y,m,d);
       let colCls='cnt-c';
       if(w===6)colCls+=' sat-col';
       else if(w===0||hol)colCls+=' sun-col';
@@ -1342,11 +1372,11 @@ function renderCheckTab(y,m,data){
   for(let d=1;d<=days;d++){
     const w=dow(y,m,d),hol=isHoliday(y,m,d);
     const wl=['日','月','火','水','木','金','土'][w];
-    const minDay=(w===3||w===6||w===0||hol)?4:5;
+    const minDay=requiredDay(y,m,d);
     let day=0,nn=0,cn=0;
     S.staffList.forEach(s=>{
       const sh=(data[s.id]||{})[d]||'';
-      if(sh==='日勤')day++;
+      if(sh==='日勤'&&isFullDayStaff(s))day++;
       if(sh==='夜勤'){if(s.type==='nurse'||s.type==='bait')nn++;if(s.type==='care')cn++;}
     });
     const dcol=w===6?'color:var(--bl)':w===0||hol?'color:var(--rd)':'';
@@ -1365,11 +1395,11 @@ function renderAlertsTab(y,m,data){
   const days=dim(y,m);const alerts=[];
   for(let d=1;d<=days;d++){
     const w=dow(y,m,d),hol=isHoliday(y,m,d);
-    const minDay=(w===3||w===6||w===0||hol)?4:5;
+    const minDay=requiredDay(y,m,d);
     let day=0,nn=0,cn=0;
     S.staffList.forEach(s=>{
       const sh=(data[s.id]||{})[d]||'';
-      if(sh==='日勤')day++;
+      if(sh==='日勤'&&isFullDayStaff(s))day++;
       if(sh==='夜勤'){if(s.type==='nurse'||s.type==='bait')nn++;if(s.type==='care')cn++;}
     });
     if(day<minDay)alerts.push({t:'ng',m:`${m+1}/${d}：日勤人数不足（${day}/${minDay}人）`});
@@ -2513,6 +2543,63 @@ function genDraft(){
   });
 
   // ══════════════════════════════════════════════
+  // STEP4.5: 日勤人数の調整
+  //   第2・第4木曜／1〜10日の平日は日勤6人を目標にする。
+  //   各自の休日数は変えず、「休みを別の日にずらす」ことで人数を寄せる。
+  //   ずらし先の日が必要人数を割る場合は動かさない（足りない分はアラートで警告）。
+  // ══════════════════════════════════════════════
+  {
+    const cntOf=d=>dayStaffCount(data,d);
+    const reqOf=d=>requiredDay(y,m,d);
+    // その日を「休み → 日勤」にできるか
+    const canWorkOn=(s,d)=>{
+      if(data[s.id][d]!=='休み') return false;
+      if(isFixedOffDay(s,y,m,d)) return false;      // 固定休み・出勤曜日外は動かさない
+      if(getReqs(y,m,s.id).includes(d)) return false; // 希望休は動かさない
+      if(d>1&&(data[s.id][d-1]==='夜勤'||data[s.id][d-1]==='夜勤明け')) return false; // 夜勤明けの翌日は休み
+      const maxRun=s.isKanri?5:4;
+      let before=0; for(let x=d-1;x>=1;x--){if(data[s.id][x]==='日勤')before++;else break;}
+      let after=0;  for(let x=d+1;x<=days;x++){if(data[s.id][x]==='日勤')after++;else break;}
+      return before+1+after<=maxRun;               // 連勤上限を超えない
+    };
+    // その日を「日勤 → 休み」にできるか（その日が必要人数を割らないこと）
+    const canRestOn=(s,d)=>data[s.id][d]==='日勤'&&(cntOf(d)-1)>=reqOf(d);
+    // 人数に数える対象（8時間勤務）で、自動割り当ての対象になる人
+    const pool=()=>S.staffList.filter(s=>isFullDayStaff(s)&&!hasWorkDays(s)&&!s.nightOnly&&!(s.nightCenter&&s.employment==='part'));
+    // 不足している日を、必要人数が多い日から順に埋める
+    const shortDays=()=>{
+      const a=[];
+      for(let d=1;d<=days;d++) if(cntOf(d)<reqOf(d)) a.push(d);
+      return a.sort((x,z)=>reqOf(z)-reqOf(x));
+    };
+    for(let pass=0;pass<4;pass++){
+      let moved=false;
+      for(const d of shortDays()){
+        let guard=30;
+        while(cntOf(d)<reqOf(d)&&guard-->0){
+          let done=false;
+          for(const s of pool()){
+            if(!canWorkOn(s,d)) continue;
+            // この人が日勤の日で、最も余裕のある日から休みを移す
+            let src=-1,bestSlack=0;
+            for(let d2=1;d2<=days;d2++){
+              if(d2===d||!canRestOn(s,d2)) continue;
+              const slack=cntOf(d2)-reqOf(d2);
+              if(slack>bestSlack){bestSlack=slack;src=d2;}
+            }
+            if(src<0) continue;
+            data[s.id][d]='日勤';
+            data[s.id][src]='休み';
+            done=true; moved=true; break;
+          }
+          if(!done) break;
+        }
+      }
+      if(!moved) break;
+    }
+  }
+
+  // ══════════════════════════════════════════════
   // STEP5: 条件違反チェック → ピンク表示用
   // ══════════════════════════════════════════════
   const violations={};
@@ -2991,7 +3078,7 @@ function printPDF(){
   }
 
   const viols=(schData['_violations']||{});
-  const dayArr=Array.from({length:days},(_,i)=>S.staffList.filter(s=>(schData[s.id]||{})[i+1]==='日勤'||(schData[s.id]||{})[i+1]==='A勤'||(schData[s.id]||{})[i+1]==='P勤').length);
+  const dayArr=Array.from({length:days},(_,i)=>dayStaffCount(schData,i+1));
 
   const headers=Array.from({length:days},(_,i)=>{
     const d=i+1,w=dow(y,m,d),hol=isHoliday(y,m,d);
@@ -3040,7 +3127,7 @@ function printPDF(){
     <td style="border:0.5px solid #bbb;padding:1px 3px;font-size:8px;background:#e8e8e8;font-weight:700">日勤人数</td>
     ${dayArr.map((cnt,i)=>{
       const d=i+1,w=dow(y,m,d),hol=isHoliday(y,m,d);
-      const minDay=(w===3||w===6||w===0||hol)?4:5;
+      const minDay=requiredDay(y,m,d);
       const bg=w===6?'rgba(24,95,165,.1)':(w===0||hol)?'rgba(163,45,45,.1)':'#f9f9f9';
       return `<td style="border:0.5px solid #bbb;text-align:center;font-size:8px;background:${bg};font-weight:700;color:${cnt>=minDay?'#3B6D11':'#A32D2D'};-webkit-print-color-adjust:exact;print-color-adjust:exact">${cnt}</td>`;
     }).join('')}

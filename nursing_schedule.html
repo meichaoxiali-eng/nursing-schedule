@@ -2724,7 +2724,7 @@ function staffForm(s){
   </div>
   <div class="row-f" style="margin-top:8px">
     <label style="font-size:12px;color:var(--txt2);margin-right:8px">勤務時間<br><span style="font-size:10px;color:var(--txt3)">(パート等・任意)</span></label>
-    <input id="sf-workhours" value="${(v.workHours||'').replace(/"/g,'&quot;')}" placeholder="例：9:30〜16:00 / 午前のみ" style="flex:1;padding:8px;border:1px solid var(--border);border-radius:8px;background:#fafafa;font-size:13px">
+    <input id="sf-workhours" value="${String(v.workHours||'').replace(/"/g,'&quot;')}" placeholder="例：9:30〜16:00 / 午前のみ" style="flex:1;padding:8px;border:1px solid var(--border);border-radius:8px;background:#fafafa;font-size:13px">
   </div>
   <label class="chk" style="margin-top:8px"><input type="checkbox" id="sf-bycase"${v.byCase?' checked':''}> 件数制（訪問1件ごとに勤務）</label>
   <div class="row-f" style="margin-top:6px">
@@ -2749,6 +2749,10 @@ function staffForm(s){
 }
 
 function openAddStaff(){
+  try{ openAddStaffInner(); }
+  catch(e){ showFlash('追加画面を開けませんでした：'+e.message,'ab'); console.error('openAddStaff error:',e); }
+}
+function openAddStaffInner(){
   document.getElementById('modal-area').innerHTML=`<div class="modal-bg" onclick="closeModal()"><div class="modal" onclick="event.stopPropagation()">
     <h3>スタッフを追加</h3>${staffForm()}
     <button class="bp" style="margin-top:10px" onclick="addStaff()">追加する</button>
@@ -2756,7 +2760,12 @@ function openAddStaff(){
   </div></div>`;
 }
 function openEditStaff(sid){
-  const s=S.staffList.find(x=>x.id===sid);if(!s)return;
+  try{ openEditStaffInner(sid); }
+  catch(e){ showFlash('編集画面を開けませんでした：'+e.message,'ab'); console.error('openEditStaff error:',e); }
+}
+function openEditStaffInner(sid){
+  const s=S.staffList.find(x=>x.id===sid);
+  if(!s){ showFlash('このスタッフのデータが見つかりません（ID: '+sid+'）','ab'); return; }
   document.getElementById('modal-area').innerHTML=`<div class="modal-bg" onclick="closeModal()"><div class="modal" onclick="event.stopPropagation()">
     <h3>${s.name}を編集</h3>${staffForm(s)}
     <button class="bp" style="margin-top:10px" onclick="editStaff('${sid}')">保存する</button>

@@ -130,6 +130,7 @@ select.full{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3
 .sn{background:#3C3489;color:#EEEDFE;border-radius:3px;padding:1px 3px;font-size:9px;font-weight:700}
 .sa{background:#EF9F27;color:#2d1c00;border-radius:3px;padding:1px 3px;font-size:9px;font-weight:700}
 .sb{background:#FFD700;color:#000;border-radius:3px;padding:1px 3px;font-size:9px;font-weight:700}
+.sc{background:#E8DEF8;color:#4527A0;border-radius:3px;padding:1px 3px;font-size:9px;font-weight:700}
 .sl{background:#87CEEB;color:#FFEB3B;border-radius:3px;padding:1px 3px;font-size:9px;font-weight:700;text-shadow:0 0 2px rgba(0,0,0,.5)}
 .sr{background:#E8E8E8;color:#555;border-radius:3px;padding:1px 3px;font-size:9px}
 .sh{background:var(--am-lt);color:var(--am-dk);border-radius:3px;padding:1px 3px;font-size:9px;font-weight:700}
@@ -350,6 +351,12 @@ const TYPE_VALUES=JOB_TYPES.map(t=>t.v);
 const typeLbl=t=>(JOB_TYPES.find(x=>x.v===t)||{lbl:t}).lbl;
 const typeCls=t=>(JOB_TYPES.find(x=>x.v===t)||{cls:'ns'}).cls;
 const typeGrp=t=>(JOB_TYPES.find(x=>x.v===t)||{grp:'nurse'}).grp;
+// ── 件数制（1件あたり○分で働く方）の判定 ──
+// 勤務表のセルには '件:3' のように保存し、画面には「3件」と表示する
+const isCaseShift=sh=>typeof sh==='string'&&sh.startsWith('件:');
+const caseNum=sh=>isCaseShift(sh)?(parseInt(sh.slice(2))||0):0;
+const caseMin=s=>{const v=parseFloat(s&&s.caseMinutes);return (isFinite(v)&&v>0)?v:40;};
+const caseHours=(s,sh)=>Math.round(caseNum(sh)*caseMin(s)/60*10)/10;
 // ローカル変数名と衝突する箇所用の別名
 const typeLbl_=t=>typeLbl(t);
 const typeCls_=t=>typeCls(t);
@@ -2041,6 +2048,7 @@ function adminBaitClear(sid){
 // ============================================================
 function shBadge(sh){
   if(!sh||sh==='空白')return'';
+  if(isCaseShift(sh))return`<span class="sc">${caseNum(sh)}件</span>`;
   return{
     '日勤':'<span class="sd">日</span>',
     'A勤':'<span class="sd" style="background:#C8E6FA;color:#0C447C">A</span>',
@@ -2349,9 +2357,12 @@ function genDraft(){
 
   // ══════════════════════════════════════════════
   // STEP3: 日勤・休みの割り当て（常勤スタッフのみ）
+  //   件数制のスタッフは日ごとに件数が変わるため自動割り当てせず、
+  //   希望休・固定休みだけ反映して出勤日は空白で残す（管理者が件数を入力）
   // ══════════════════════════════════════════════
   S.staffList.forEach(s=>{
     if(s.type==='bait') return;
+    if(s.byCase) return; // 件数制：日ごとに件数が変わるため自動割り当てせず空白で残す
     if(s.nightOnly||(s.nightCenter&&s.employment==='part')){
       // 夜勤専従パート: 空きは全て休み（休日数制限なし）
       for(let d=1;d<=days;d++) if(!data[s.id][d]) data[s.id][d]='休み';
@@ -2560,11 +2571,42 @@ function openEdit(e,sid,d){
   openEditForce(sid,d);
 }
 
+function setCaseShift(sid,d){
+  const v=parseInt(document.getElementById('cs-num')?.value);
+  if(!isFinite(v)||v<0){showFlash('件数を数字で入力してください','ab');return;}
+  setShift(sid,d,v===0?'休み':'件:'+v);
+}
 function openEditForce(sid,d){
   const s=S.staffList.find(x=>x.id===sid);
   const y=S.aYr,m=S.aMo;
   const schData=S.schedules[sk(y,m)]||{};
   const curShift=(schData[sid]||{})[d]||'';
+  // 件数制のスタッフは件数を入力する
+  if(s&&s.byCase){
+    const cur=isCaseShift(curShift)?caseNum(curShift):'';
+    const mins=caseMin(s);
+    document.getElementById('modal-area').innerHTML=`
+    <div class="modal-bg" onclick="closeModal()">
+      <div class="modal" onclick="event.stopPropagation()">
+        <h3>${s.name}　${m+1}月${d}日</h3>
+        <div style="font-size:11px;color:var(--txt2);margin-bottom:8px">件数制（1件 ${mins}分）</div>
+        <div class="row-f">
+          <label style="font-size:13px">訪問件数</label>
+          <input id="cs-num" type="number" min="0" max="20" step="1" value="${cur}" placeholder="例: 3" style="flex:1;padding:10px;border:1px solid var(--border);border-radius:8px;background:#fafafa;font-size:16px;text-align:center">
+          <span style="font-size:13px;margin-left:6px">件</span>
+        </div>
+        <div style="display:flex;gap:5px;flex-wrap:wrap;margin:8px 0">
+          ${[1,2,3,4,5,6].map(v=>`<button onclick="document.getElementById('cs-num').value=${v}" style="flex:1;min-width:44px;padding:8px 0;border:1px solid var(--border);border-radius:8px;background:${cur===v?'#E8DEF8':'#fff'};font-size:13px;font-weight:600;cursor:pointer">${v}件</button>`).join('')}
+        </div>
+        <div style="font-size:10px;color:var(--txt3);margin-bottom:8px">※0件にすると「休み」になります。Excelには自動で時間換算されます（例：3件×${mins}分＝${Math.round(3*mins/60*10)/10}時間）</div>
+        <button class="bp" onclick="setCaseShift('${sid}',${d})">保存する</button>
+        <div class="sep2"></div>
+        ${['休み','有給','バースデー','リフレッシュ','空白'].map(sh=>`<button class="shift-btn" onclick="setShift('${sid}',${d},'${sh}')" style="${curShift===sh?'background:#E6F1FB;border:1.5px solid #185FA5;font-weight:600':''}">${shiftIcon(sh)}&nbsp; ${sh}</button>`).join('')}
+        <button class="shift-btn" onclick="closeModal()" style="color:var(--txt2);background:#f5f5f5">キャンセル</button>
+      </div>
+    </div>`;
+    return;
+  }
   document.getElementById('modal-area').innerHTML=`
   <div class="modal-bg" onclick="closeModal()">
     <div class="modal" onclick="event.stopPropagation()">
@@ -2659,6 +2701,16 @@ function staffForm(s){
     <label style="font-size:12px;color:var(--txt2);margin-right:8px">勤務時間<br><span style="font-size:10px;color:var(--txt3)">(パート等・任意)</span></label>
     <input id="sf-workhours" value="${(v.workHours||'').replace(/"/g,'&quot;')}" placeholder="例：9:30〜16:00 / 午前のみ" style="flex:1;padding:8px;border:1px solid var(--border);border-radius:8px;background:#fafafa;font-size:13px">
   </div>
+  <label class="chk" style="margin-top:8px"><input type="checkbox" id="sf-bycase"${v.byCase?' checked':''}> 件数制（訪問1件ごとに勤務）</label>
+  <div class="row-f" style="margin-top:6px">
+    <label style="font-size:12px;color:var(--txt2);margin-right:8px">1件あたり</label>
+    <input id="sf-casemin" type="number" min="1" max="480" step="5" value="${v.caseMinutes!==undefined&&v.caseMinutes!==''?v.caseMinutes:40}" style="width:80px;padding:8px;border:1px solid var(--border);border-radius:8px;background:#fafafa;font-size:13px">
+    <span style="font-size:11px;color:var(--txt3);margin-left:6px">分（件数制の場合）</span>
+  </div>
+  <div style="background:#EDE7F6;border-left:3px solid #5E35B1;border-radius:6px;padding:7px 9px;font-size:10px;color:#4527A0;line-height:1.6;margin-top:6px">
+    📋 件数制にすると、ドラフト自動作成では出勤日が<strong>空白</strong>で出ます（希望休・固定休みは反映）。<br>
+    勤務表のセルをタップして<strong>その日の件数</strong>を入力すると「3件」と表示され、Excelには自動で時間換算されます（例：3件×40分＝2.0時間）。
+  </div>
   <div class="row-f" style="margin-top:8px">
     <label style="font-size:12px;color:var(--txt2);margin-right:8px">1日の<br>勤務時間数</label>
     <input id="sf-dayhours" type="number" min="0" max="24" step="0.5" value="${v.dayHours!==undefined&&v.dayHours!==''?v.dayHours:8}" style="width:80px;padding:8px;border:1px solid var(--border);border-radius:8px;background:#fafafa;font-size:13px">
@@ -2703,7 +2755,8 @@ function addStaff(){
     employment:document.getElementById('sf-employment')?.value||'fulltime',
     workHours:document.getElementById('sf-workhours')?.value.trim()||'',
     dayHours:parseFloat(document.getElementById('sf-dayhours')?.value)||8,
-    dayHours:parseFloat(document.getElementById('sf-dayhours')?.value)||8,
+    byCase:document.getElementById('sf-bycase')?.checked||false,
+    caseMinutes:parseFloat(document.getElementById('sf-casemin')?.value)||40,
   });
   saveStaff();closeModal();
 }
@@ -2721,6 +2774,9 @@ function editStaff(sid){
     nightOnly:document.getElementById('sf-nightonly').checked,
     isKanri:document.getElementById('sf-iskanri').checked,
     workHours:document.getElementById('sf-workhours')?.value.trim()||'',
+    dayHours:parseFloat(document.getElementById('sf-dayhours')?.value)||8,
+    byCase:document.getElementById('sf-bycase')?.checked||false,
+    caseMinutes:parseFloat(document.getElementById('sf-casemin')?.value)||40,
     empType:document.getElementById('sf-emptype')?.value||'A',
     employment:document.getElementById('sf-employment')?.value||'fulltime',
   };
@@ -2789,7 +2845,12 @@ async function exportExcelByType(staffType){
   // パート等：1日の勤務時間数をスタッフごとに反映（常勤換算は様式側で自動計算される）
   const dayHoursOf=s=>{const v=parseFloat(s&&s.dayHours);return (isFinite(v)&&v>0)?v:8.0;};
   // バースデー・リフレッシュ休暇は出勤扱い → 通常勤務と同じ時間数
-  const hoursFor=(s,sh)=>(sh==='日勤'||sh==='バースデー'||sh==='リフレッシュ')?dayHoursOf(s):(shiftHrs[sh]||0);
+  // 件数制は「件数 × 1件あたりの分数」で時間換算（例：3件×40分＝2.0時間）
+  const hoursFor=(s,sh)=>{
+    if(isCaseShift(sh)) return caseHours(s,sh);
+    if(sh==='日勤'||sh==='バースデー'||sh==='リフレッシュ') return dayHoursOf(s);
+    return shiftHrs[sh]||0;
+  };
   const typeName=staffType==='nurse'?'看護':'介護';
   const orgName=staffType==='nurse'?'訪問看護はる':'訪問介護はる';
   // 看護ファイル＝看護師+理学/作業/言語療法士、介護ファイル＝介護士+介護福祉士
@@ -2828,7 +2889,7 @@ async function exportExcelByType(staffType){
     ws[encCell(row,13)]={v:s.name,t:'s'};
     for(let d=1;d<=days;d++){
       const sh=(schData[s.id]||{})[d]||'';
-      ws[encCell(row,16+d)]={v:shiftSym[sh]??'',t:'s'};
+      ws[encCell(row,16+d)]={v:isCaseShift(sh)?'日':(shiftSym[sh]??''),t:'s'};
     }
   });
   // 余分な行をクリア
@@ -2881,9 +2942,9 @@ function printPDF(){
   if(!schData){showFlash('勤務表がありません','ab');return;}
   const days=dim(y,m);
   const wl=['日','月','火','水','木','金','土'];
-  const shBg=sh=>({'日勤':'#E6F1FB','A勤':'#C8E6FA','P勤':'#B3D4F7','夜勤':'#3C3489','夜勤明け':'#EF9F27','有給':'#EAF3DE','休み':'#F0F0F0','バースデー':'#FFD700','リフレッシュ':'#87CEEB','空白':'#fff'}[sh]||'#fff');
-  const shFg=sh=>({'夜勤':'#EEEDFE','夜勤明け':'#2d1c00','日勤':'#0C447C','A勤':'#0C447C','P勤':'#0C447C','有給':'#27500A','休み':'#888','バースデー':'#000','リフレッシュ':'#FFEB3B'}[sh]||'#333');
-  const shLbl=sh=>({'日勤':'日','A勤':'A','P勤':'P','夜勤':'夜','夜勤明け':'明','休み':'休','有給':'有','バースデー':'バ','リフレッシュ':'リ','空白':''}[sh]||'');
+  const shBg=sh=>isCaseShift(sh)?'#E8DEF8':({'日勤':'#E6F1FB','A勤':'#C8E6FA','P勤':'#B3D4F7','夜勤':'#3C3489','夜勤明け':'#EF9F27','有給':'#EAF3DE','休み':'#F0F0F0','バースデー':'#FFD700','リフレッシュ':'#87CEEB','空白':'#fff'}[sh]||'#fff');
+  const shFg=sh=>isCaseShift(sh)?'#4527A0':({'夜勤':'#EEEDFE','夜勤明け':'#2d1c00','日勤':'#0C447C','A勤':'#0C447C','P勤':'#0C447C','有給':'#27500A','休み':'#888','バースデー':'#000','リフレッシュ':'#FFEB3B'}[sh]||'#333');
+  const shLbl=sh=>isCaseShift(sh)?caseNum(sh)+'件':({'日勤':'日','A勤':'A','P勤':'P','夜勤':'夜','夜勤明け':'明','休み':'休','有給':'有','バースデー':'バ','リフレッシュ':'リ','空白':''}[sh]||'');
 
   function counts(sid){
     let ko=0,yu=0,ni=0,ya=0,ak=0;

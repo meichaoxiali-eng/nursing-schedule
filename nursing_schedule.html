@@ -396,14 +396,21 @@ function nthThursdays(y,m){
   for(let d=1;d<=dm;d++) if(dow(y,m,d)===4) out.push(d);
   return out;
 }
-function requiredDay(y,m,d){
+// 職種別の日勤帯 最低人数
+//   月・火・木・金 … 訪問看護3人・訪問介護3人（看護3は管理者含む）
+//   水・土・日・祝 … 訪問看護3人・訪問介護1人
+function requiredNurse(y,m,d){ return 3; } // 看護は毎日3人（管理者含む）
+function requiredCare(y,m,d){
   const w=dow(y,m,d),hol=isHoliday(y,m,d);
-  if(hol||w===0||w===6) return 4;               // 土日祝
-  const th=nthThursdays(y,m);
-  if(d===th[1]||d===th[3]) return 6;            // 第2・第4木曜
-  if(d<=10) return 6;                           // 1〜10日の平日
-  if(w===3) return 4;                           // 水曜
-  return 5;
+  if(hol||w===0||w===3||w===6) return 1;        // 水・土・日・祝は介護1人
+  return 3;                                     // 月火木金は介護3人
+}
+// 合計の必要人数（看護＋介護）
+function requiredDay(y,m,d){ return requiredNurse(y,m,d)+requiredCare(y,m,d); }
+// 日勤の連勤上限：夜勤をするスタッフは3連勤まで（4連勤は付けない）／管理者5連勤／その他4連勤
+function maxDayRunOf(s){
+  if(s&&s.nightOk&&(s.nightMax||0)>0) return 3; // 夜勤者は3連勤まで
+  return (s&&s.isKanri)?5:4;
 }
 // 日勤帯の人数に数えるスタッフ（8時間勤務＝常勤や8時間の非常勤）※生成の休日移動対象に使用
 const isFullDayStaff=s=>!!s&&s.type!=='bait'&&!s.byCase&&(parseFloat(s.dayHours)||8)>=8;
@@ -1455,13 +1462,15 @@ function renderAlertsTab(y,m,data){
   for(let d=1;d<=days;d++){
     const w=dow(y,m,d),hol=isHoliday(y,m,d);
     const minDay=requiredDay(y,m,d);
-    let day=0,nn=0,cn=0;
+    let day=0,nn=0,cn=0,dNurse=0,dCare=0;
     S.staffList.forEach(s=>{
       const sh=(data[s.id]||{})[d]||'';
-      if(isDayShift(sh)&&countsAsDayStaff(s))day++;
+      if(isDayShift(sh)&&countsAsDayStaff(s)){day++;if(s.type==='nurse')dNurse++;else if(s.type==='care'||s.type==='kfuku')dCare++;}
       if(sh==='夜勤'){if(s.type==='nurse'||s.type==='bait')nn++;if(s.type==='care'||s.type==='kfuku')cn++;}
     });
-    if(day<minDay)alerts.push({t:'ng',m:`${m+1}/${d}：日勤人数不足（${day}/${minDay}人）`});
+    const rNurse=requiredNurse(y,m,d),rCare=requiredCare(y,m,d);
+    if(dNurse<rNurse)alerts.push({t:'ng',m:`${m+1}/${d}：日勤 看護不足（${dNurse}/${rNurse}人）`});
+    if(dCare<rCare)alerts.push({t:'ng',m:`${m+1}/${d}：日勤 介護不足（${dCare}/${rCare}人）`});
     if(nn<1)alerts.push({t:'ng',m:`${m+1}/${d}：看護夜勤者なし ⚡`});
     if(cn<1)alerts.push({t:'ng',m:`${m+1}/${d}：介護夜勤者なし ⚡`});
   }
@@ -1469,7 +1478,7 @@ function renderAlertsTab(y,m,data){
     if(!s.nightOk||s.nightMax===0)return;
     let cnt=0;for(let d=1;d<=days;d++){if((data[s.id]||{})[d]==='夜勤')cnt++;}
     if(cnt>s.nightMax)alerts.push({t:'ng',m:`${s.name}：夜勤超過（${cnt}/${s.nightMax}回）`});
-    const maxDayRun=s.isKanri?5:4;  // 管理者は5日、その他4日
+    const maxDayRun=maxDayRunOf(s);  // 夜勤者3・管理者5・その他4
     let run=0,runSetsAlert=0,prevRunMax=false;
     for(let d=1;d<=days;d++){
       const sh=(data[s.id]||{})[d]||'';
@@ -1532,7 +1541,7 @@ function renderStaffMgmt(){
             <span class="tag ${cls}">${lbl}</span>
             <span style="font-size:13px;font-weight:500">${s.name}</span>
           </div>
-          <span style="font-size:10px;color:var(--txt3)">夜勤${s.nightOk?'可':'不可'}${s.nightMax>0?' 上限'+s.nightMax+'回':''}${s.nightOk&&s.nightMax>0?' <strong style="color:#3C3489">連続'+getMaxConsecForForm(s)+'セット</strong>':''}${(()=>{const wl=['日','月','火','水','木','金','土'];const wd=Array.isArray(s.workDays)?s.workDays:[];return wd.length?' <strong style="color:#27500A">出勤:'+wd.slice().sort().map(i=>wl[i]).join('')+'</strong>':'';})()}${(()=>{const p=Number(s.weeklyWorkDays)||0;if(p<=0)return '';const dh=parseFloat(s.dayHours)||8;return ' <strong style="color:#0C447C">週'+p+'回</strong>（週'+(Math.round(dh*p*10)/10)+'h）';})()}${(()=>{const fx=Array.isArray(s.fixedOffDays)?s.fixedOffDays:(s.weekendOff?[0,6]:[]);const wl=['日','月','火','水','木','金','土'];return fx.length?' 固定休:'+fx.slice().sort().map(i=>wl[i]).join('')+(s.holidayOff?'+祝':''):(s.holidayOff?' 固定休:祝':'');})()}${s.dayOnly?' 日勤のみ':''}${s.isKanri?' 管理者(5連勤可)':''}　区分:${s.empType||'A'}　${s.employment==='part'?'パート':'正社員'}${s.workHours?'<br>🕒 '+s.workHours:''}${(parseFloat(s.dayHours)||8)!==8?'　<strong style="color:#7B1FA2">1日'+(parseFloat(s.dayHours)||8)+'時間</strong>':''}</span>
+          <span style="font-size:10px;color:var(--txt3)">夜勤${s.nightOk?'可':'不可'}${s.nightMax>0?' 上限'+s.nightMax+'回':''}${s.nightOk&&s.nightMax>0?' <strong style="color:#3C3489">連続'+getMaxConsecForForm(s)+'セット</strong>':''}${(()=>{const wl=['日','月','火','水','木','金','土'];const wd=Array.isArray(s.workDays)?s.workDays:[];return wd.length?' <strong style="color:#27500A">出勤:'+wd.slice().sort().map(i=>wl[i]).join('')+'</strong>':'';})()}${(()=>{const p=Number(s.weeklyWorkDays)||0;if(p<=0)return '';const dh=parseFloat(s.dayHours)||8;return ' <strong style="color:#0C447C">週'+p+'回</strong>（週'+(Math.round(dh*p*10)/10)+'h）';})()}${(()=>{const fx=Array.isArray(s.fixedOffDays)?s.fixedOffDays:(s.weekendOff?[0,6]:[]);const wl=['日','月','火','水','木','金','土'];return fx.length?' 固定休:'+fx.slice().sort().map(i=>wl[i]).join('')+(s.holidayOff?'+祝':''):(s.holidayOff?' 固定休:祝':'');})()}${s.dayOnly?' 日勤のみ':''}${s.isKanri?' 管理者':''}　区分:${s.empType||'A'}　${s.employment==='part'?'パート':'正社員'}${s.workHours?'<br>🕒 '+s.workHours:''}${(parseFloat(s.dayHours)||8)!==8?'　<strong style="color:#7B1FA2">1日'+(parseFloat(s.dayHours)||8)+'時間</strong>':''}</span>
         </div>
         <div style="display:flex;gap:4px;flex-shrink:0">
           <button style="padding:5px 8px;border:1px solid var(--border);border-radius:7px;background:#fafafa;font-size:14px;cursor:pointer;line-height:1" onclick="moveStaff('${s.id}',-1)" title="上へ">↑</button>
@@ -2528,7 +2537,7 @@ function genDraft(){
     // 実際の所定休日目標（有給は別）
     const effectiveTargetOff=targetOff; // 所定休日数は変わらない
 
-    const maxRun=s.isKanri?5:4;
+    const maxRun=maxDayRunOf(s); // 夜勤者3・管理者5・その他4
     const maxSetsDay=2;
     // 固定休み（曜日・祝祭日・出勤曜日以外）は日勤に戻さない＝確実に反映
     const fixedSet=new Set();
@@ -2602,16 +2611,22 @@ function genDraft(){
     }
 
     // 出勤曜日を指定している場合は、その曜日だけ出勤するので所定休日数の調整はしない
-    // 休みが足りない → 最長連勤末尾を休みへ
+    // 休みが足りない → 既存の休み（夜勤・明け含む）から最も離れた日勤日に休みを置く＝月内で均等配分
+    const _isOffLike=v=>(v==='休み'||v==='有給'||v==='バースデー'||v==='リフレッシュ'||v==='夜勤明け'||v==='夜勤');
     let guard=200;
     while(!hasWorkDays(s)&&offCount()<targetOff&&guard-->0){
-      let bestEnd=-1,bestLen=0,curRun=0;
+      let bestD=-1,bestDist=-1;
       for(let d=1;d<=days;d++){
-        if(data[s.id][d]==='日勤'){ curRun++; if(curRun>bestLen){bestLen=curRun;bestEnd=d;} }
-        else curRun=0;
+        if(data[s.id][d]!=='日勤') continue;
+        if(fixedSet.has(d)||reqSet.has(d)) continue;
+        // 左右それぞれ最寄りのオフ（または月境界）までの距離
+        let L=1; while(d-L>=1 && !_isOffLike(data[s.id][d-L])) L++;
+        let R=1; while(d+R<=days && !_isOffLike(data[s.id][d+R])) R++;
+        const dist=Math.min(L,R);
+        if(dist>bestDist){ bestDist=dist; bestD=d; }
       }
-      if(bestEnd<0) break;
-      data[s.id][bestEnd]='休み';
+      if(bestD<0) break;
+      data[s.id][bestD]='休み';
     }
 
     // 休みが多い → 連勤上限内で休みを日勤に戻す
@@ -2659,50 +2674,55 @@ function genDraft(){
   //   ずらし先の日が必要人数を割る場合は動かさない（足りない分はアラートで警告）。
   // ══════════════════════════════════════════════
   {
-    const cntOf=d=>dayStaffCount(data,d);
-    const reqOf=d=>requiredDay(y,m,d);
+    // 職種グループ（看護 / 介護＝介護士＋介護福祉士）。管理者も看護・介護の人数に含める
+    const grpOf=s=>s.type==='nurse'?'nurse':((s.type==='care'||s.type==='kfuku')?'care':null);
+    const cntGrp=(d,g)=>S.staffList.filter(s=>countsAsDayStaff(s)&&grpOf(s)===g&&isDayShift((data[s.id]||{})[d])).length;
+    const reqGrp=(d,g)=>g==='nurse'?requiredNurse(y,m,d):requiredCare(y,m,d);
+    const maxRunOf=s=>maxDayRunOf(s); // 夜勤者3・管理者5・その他4
     // その日を「休み → 日勤」にできるか
     const canWorkOn=(s,d)=>{
       if(data[s.id][d]!=='休み') return false;
       if(isFixedOffDay(s,y,m,d)) return false;      // 固定休み・出勤曜日外は動かさない
       if(getReqs(y,m,s.id).includes(d)) return false; // 希望休は動かさない
       if(d>1&&(data[s.id][d-1]==='夜勤'||data[s.id][d-1]==='夜勤明け')) return false; // 夜勤明けの翌日は休み
-      const maxRun=s.isKanri?5:4;
+      const maxRun=maxRunOf(s);
       let before=0; for(let x=d-1;x>=1;x--){if(data[s.id][x]==='日勤')before++;else break;}
       let after=0;  for(let x=d+1;x<=days;x++){if(data[s.id][x]==='日勤')after++;else break;}
       return before+1+after<=maxRun;               // 連勤上限を超えない
     };
-    // その日を「日勤 → 休み」にできるか（その日が必要人数を割らないこと）
-    const canRestOn=(s,d)=>data[s.id][d]==='日勤'&&(cntOf(d)-1)>=reqOf(d);
-    // 人数に数える対象（8時間勤務）で、自動割り当ての対象になる人
-    const pool=()=>S.staffList.filter(s=>isFullDayStaff(s)&&!hasWorkDays(s)&&!s.nightOnly&&!(s.nightCenter&&s.employment==='part'));
-    // 不足している日を、必要人数が多い日から順に埋める
-    const shortDays=()=>{
-      const a=[];
-      for(let d=1;d<=days;d++) if(cntOf(d)<reqOf(d)) a.push(d);
-      return a.sort((x,z)=>reqOf(z)-reqOf(x));
-    };
-    for(let pass=0;pass<4;pass++){
+    // その人の属する職種で、その日を「日勤 → 休み」にできるか（その職種が必要数を割らない）
+    const canRestOn=(s,d)=>{const g=grpOf(s);return data[s.id][d]==='日勤'&&g&&(cntGrp(d,g)-1)>=reqGrp(d,g);};
+    // 自動割り当ての対象（曜日固定・夜勤専従パート等は除外）
+    const poolAll=()=>S.staffList.filter(s=>isFullDayStaff(s)&&!hasWorkDays(s)&&!s.nightOnly&&!(s.nightCenter&&s.employment==='part')&&grpOf(s));
+    // 職種ごとに不足を埋める
+    for(let pass=0;pass<5;pass++){
       let moved=false;
-      for(const d of shortDays()){
-        let guard=30;
-        while(cntOf(d)<reqOf(d)&&guard-->0){
-          let done=false;
-          for(const s of pool()){
-            if(!canWorkOn(s,d)) continue;
-            // この人が日勤の日で、最も余裕のある日から休みを移す
-            let src=-1,bestSlack=0;
-            for(let d2=1;d2<=days;d2++){
-              if(d2===d||!canRestOn(s,d2)) continue;
-              const slack=cntOf(d2)-reqOf(d2);
-              if(slack>bestSlack){bestSlack=slack;src=d2;}
+      for(const g of ['nurse','care']){
+        const pool=poolAll().filter(s=>grpOf(s)===g);
+        // 不足日を列挙（必要数が多い日＝平日から優先）
+        const shortDays=[];
+        for(let d=1;d<=days;d++) if(cntGrp(d,g)<reqGrp(d,g)) shortDays.push(d);
+        shortDays.sort((x,z)=>reqGrp(z,g)-reqGrp(x,g));
+        for(const d of shortDays){
+          let guard=30;
+          while(cntGrp(d,g)<reqGrp(d,g)&&guard-->0){
+            let done=false;
+            for(const s of pool){
+              if(!canWorkOn(s,d)) continue;
+              // この人が日勤の日のうち、同職種で最も余裕のある日から休みを移す
+              let src=-1,bestSlack=0;
+              for(let d2=1;d2<=days;d2++){
+                if(d2===d||!canRestOn(s,d2)) continue;
+                const slack=cntGrp(d2,g)-reqGrp(d2,g);
+                if(slack>bestSlack){bestSlack=slack;src=d2;}
+              }
+              if(src<0) continue;
+              data[s.id][d]='日勤';
+              data[s.id][src]='休み';
+              done=true; moved=true; break;
             }
-            if(src<0) continue;
-            data[s.id][d]='日勤';
-            data[s.id][src]='休み';
-            done=true; moved=true; break;
+            if(!done) break;
           }
-          if(!done) break;
         }
       }
       if(!moved) break;
@@ -2736,7 +2756,7 @@ function genDraft(){
   // ══════════════════════════════════════════════
   const violations={};
   S.staffList.filter(s=>s.type!=='bait').forEach(s=>{
-    const maxRun=s.isKanri?5:4;
+    const maxRun=maxDayRunOf(s);
     let run=0;
     for(let d=1;d<=days;d++){
       if(data[s.id][d]==='日勤'){ run++; if(run>maxRun){if(!violations[s.id])violations[s.id]={};violations[s.id][d]=true;} }

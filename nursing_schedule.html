@@ -343,15 +343,27 @@ const DEFAULT_STAFF=[
 
 const SHIFTS=['日勤','A勤','P勤','研修','夜勤','夜勤明け','休み','有給','バースデー','リフレッシュ','空白'];
 // ── 職種の定義（看護グループ→介護グループの順で表示） ──
+// job = Excel「職種」欄 / lic = Excel「資格」欄（公式プルダウンに準拠した正式名称）
 const JOB_TYPES=[
-  {v:'nurse',lbl:'看護師',    cls:'ns', grp:'nurse'},
-  {v:'pt',   lbl:'理学療法士',cls:'tpt',grp:'nurse'},
-  {v:'ot',   lbl:'作業療法士',cls:'tot',grp:'nurse'},
-  {v:'st',   lbl:'言語聴覚士',cls:'tst',grp:'nurse'},
-  {v:'bait', lbl:'看護バイト',cls:'bs2',grp:'nurse'},
-  {v:'care', lbl:'介護士',    cls:'cs', grp:'care'},
-  {v:'kfuku',lbl:'介護福祉士',cls:'tkf',grp:'care'},
+  {v:'nurse', lbl:'看護師',    cls:'ns', grp:'nurse', job:'看護職員',   lic:'看護師'},
+  {v:'junkan',lbl:'准看護師',  cls:'ns', grp:'nurse', job:'看護職員',   lic:'准看護師'},
+  {v:'hoken', lbl:'保健師',    cls:'ns', grp:'nurse', job:'看護職員',   lic:'保健師'},
+  {v:'pt',    lbl:'理学療法士',cls:'tpt',grp:'nurse', job:'理学療法士', lic:'理学療法士'},
+  {v:'ot',    lbl:'作業療法士',cls:'tot',grp:'nurse', job:'作業療法士', lic:'作業療法士'},
+  {v:'st',    lbl:'言語聴覚士',cls:'tst',grp:'nurse', job:'言語聴覚士', lic:'言語聴覚士'},
+  {v:'bait',  lbl:'看護バイト',cls:'bs2',grp:'nurse', job:'看護職員',   lic:'看護師'},
+  {v:'care',  lbl:'介護士',    cls:'cs', grp:'care',  job:'訪問介護員', lic:''},
+  {v:'kfuku', lbl:'介護福祉士',cls:'tkf',grp:'care',  job:'訪問介護員', lic:'介護福祉士'},
+  {v:'jitsumu', lbl:'実務者',  cls:'tkf',grp:'care',  job:'訪問介護員', lic:'実務者研修修了者'},
+  {v:'shonin',  lbl:'初任者',  cls:'cs', grp:'care',  job:'訪問介護員', lic:'介護職員初任者研修修了者'},
+  {v:'seikatsu',lbl:'生活援助',cls:'cs', grp:'care',  job:'訪問介護員', lic:'生活援助従事者研修修了者'},
 ];
+// グループ所属の種別一覧（新種別を追加しても自動で反映される）
+const CARE_TYPES=JOB_TYPES.filter(t=>t.grp==='care').map(t=>t.v);
+const NURSE_FILE_TYPES=JOB_TYPES.filter(t=>t.grp==='nurse'&&t.v!=='bait').map(t=>t.v);
+const isCareType=t=>(JOB_TYPES.find(x=>x.v===t)||{}).grp==='care';
+const jobNameOf=t=>(JOB_TYPES.find(x=>x.v===t)||{}).job||'看護職員';
+const licNameOf=t=>{const o=JOB_TYPES.find(x=>x.v===t);return o?(o.lic||''):'';};
 const TYPE_VALUES=JOB_TYPES.map(t=>t.v);
 const typeLbl=t=>(JOB_TYPES.find(x=>x.v===t)||{lbl:t}).lbl;
 const typeCls=t=>(JOB_TYPES.find(x=>x.v===t)||{cls:'ns'}).cls;
@@ -366,7 +378,7 @@ const caseHours=(s,sh)=>Math.round(caseNum(sh)*caseMin(s)/60*10)/10;
 const typeLbl_=t=>typeLbl(t);
 const typeCls_=t=>typeCls(t);
 // 夜勤に入る職種（介護福祉士は介護グループとして夜勤可。理学/作業/言語療法士は日勤のみ）
-const NIGHT_TYPES=['nurse','care','kfuku'];
+const NIGHT_TYPES=['nurse',...CARE_TYPES];
 // 固定休み（曜日・祝祭日）の判定。fixedOffDays未設定の既存スタッフは weekendOff を土日として扱う
 function isFixedOffDay(s,y,m,d){
   const w=dow(y,m,d);
@@ -427,7 +439,7 @@ function dayStaffCount(data,d){
 }
 // その日の日勤帯人数を職種グループ別に（'nurse' または 'care'＝介護士＋介護福祉士）
 function dayCountByGroup(data,d,grp){
-  const types = grp==='care' ? ['care','kfuku'] : ['nurse'];
+  const types = grp==='care' ? CARE_TYPES : ['nurse'];
   return S.staffList.filter(s=>countsAsDayStaff(s)&&types.includes(s.type)&&isDayShift((data[s.id]||{})[d])).length;
 }
 const PW='sakura2024';
@@ -981,7 +993,7 @@ function openReqTypeModal(day){
   }
   // 同職種の重複チェック（看護・介護それぞれ同じ日は1人まで／週休・年休とも対象）
   const _self=S.staffList.find(s=>s.id===sid);
-  const _grp=t=>t==='kfuku'?'care':t; // 介護福祉士は介護グループ
+  const _grp=t=>isCareType(t)?'care':t; // 介護系はすべて介護グループ
   const _conf=S.staffList.filter(s=>s.id!==sid&&_grp(s.type)===_grp(_self.type)&&getReqs(y,m,s.id).includes(day));
   if(_conf.length>=1){
     const _names=_conf.map(s=>s.name).join('・');
@@ -1417,7 +1429,7 @@ function renderSchTab(y,m,data){
     <td class="cnt-c" colspan="5"></td>
   </tr>`;
   h+=cntRow('看護', nurseArr, 'var(--bl-dk)', false);
-  h+=cntRow('介護福祉士・介護士', careArr, 'var(--gr-dk)', false);
+  h+=cntRow('介護職員（訪問介護員）', careArr, 'var(--gr-dk)', false);
   h+=cntRow('合計（必要数）', totalArr, '', true);
   h+=`</tbody></table></div></div>`;
 
@@ -1449,7 +1461,7 @@ function renderCheckTab(y,m,data){
     S.staffList.forEach(s=>{
       const sh=(data[s.id]||{})[d]||'';
       if(isDayShift(sh)&&countsAsDayStaff(s))day++;
-      if(sh==='夜勤'){if(s.type==='nurse'||s.type==='bait')nn++;if(s.type==='care'||s.type==='kfuku')cn++;}
+      if(sh==='夜勤'){if(s.type==='nurse'||s.type==='bait')nn++;if(isCareType(s.type))cn++;}
     });
     const dcol=w===6?'color:var(--bl)':w===0||hol?'color:var(--rd)':'';
     h+=`<div class="ck">
@@ -1471,8 +1483,8 @@ function renderAlertsTab(y,m,data){
     let day=0,nn=0,cn=0,dNurse=0,dCare=0;
     S.staffList.forEach(s=>{
       const sh=(data[s.id]||{})[d]||'';
-      if(isDayShift(sh)&&countsAsDayStaff(s)){day++;if(s.type==='nurse')dNurse++;else if(s.type==='care'||s.type==='kfuku')dCare++;}
-      if(sh==='夜勤'){if(s.type==='nurse'||s.type==='bait')nn++;if(s.type==='care'||s.type==='kfuku')cn++;}
+      if(isDayShift(sh)&&countsAsDayStaff(s)){day++;if(s.type==='nurse')dNurse++;else if(isCareType(s.type))dCare++;}
+      if(sh==='夜勤'){if(s.type==='nurse'||s.type==='bait')nn++;if(isCareType(s.type))cn++;}
     });
     const rNurse=requiredNurse(y,m,d),rCare=requiredCare(y,m,d);
     if(dNurse<rNurse)alerts.push({t:'ng',m:`${m+1}/${d}：日勤 看護不足（${dNurse}/${rNurse}人）`});
@@ -1999,7 +2011,7 @@ function openReqEdit(sid){
         <button onclick="closeModal()" style="border:none;background:none;font-size:22px;color:#999;cursor:pointer;padding:0 4px">×</button>
       </div>
       <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
-        <span style="display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;background:${staff.type==='nurse'?'#E6F1FB':staff.type==='care'?'#EAF3DE':'#FAEEDA'};color:${staff.type==='nurse'?'#0C447C':staff.type==='care'?'#27500A':'#633806'}">${typeLbl}</span>
+        <span style="display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;background:${staff.type==='nurse'?'#E6F1FB':isCareType(staff.type)?'#EAF3DE':'#FAEEDA'};color:${staff.type==='nurse'?'#0C447C':isCareType(staff.type)?'#27500A':'#633806'}">${typeLbl}</span>
         <span style="font-size:12px;color:#666">${y}年${m+1}月</span>
       </div>
       <div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap">
@@ -2400,7 +2412,7 @@ function genDraft(scope){
   // その日にすでに夜勤している看護/介護の数を返す
   function nightCountOnDay(type, d){
     // 'care' は介護グループ（介護士＋介護福祉士）としてカウント
-    const types = type==='care' ? ['care','kfuku'] : [type];
+    const types = type==='care' ? CARE_TYPES : [type];
     return S.staffList.filter(s=>types.includes(s.type)&&(data[s.id][d]==='夜勤')).length;
   }
 
@@ -2422,7 +2434,7 @@ function genDraft(scope){
 
   // 全夜勤可能スタッフ（バイト除く）。介護グループ＝介護士＋介護福祉士
   const nurseNightStaff=nightStaff.filter(s=>s.type==='nurse');
-  const careNightStaff =nightStaff.filter(s=>s.type==='care'||s.type==='kfuku');
+  const careNightStaff =nightStaff.filter(s=>isCareType(s.type));
 
   // 候補から最適な1名を選んで夜勤配置（残り夜勤数が多い→直近夜勤から日数が空いている順）
   function pickAndPlace(pool,d){
@@ -2461,7 +2473,7 @@ function genDraft(scope){
   // ══════════════════════════════════════════════
   const baitNightOn=(d)=>S.staffList.some(s=>s.type==='bait'&&((S.requests[brk(y,m,s.id)]||{})[d]==='夜勤'));
   const nurseCovered=(d)=>baitNightOn(d)||S.staffList.some(s=>s.type==='nurse'&&data[s.id][d]==='夜勤');
-  const careCovered =(d)=>S.staffList.some(s=>(s.type==='care'||s.type==='kfuku')&&data[s.id][d]==='夜勤');
+  const careCovered =(d)=>S.staffList.some(s=>(isCareType(s.type))&&data[s.id][d]==='夜勤');
   for(let d=1;d<=days;d++){
     // 介護はいるが看護がいない → 看護を1人補う
     if(careCovered(d)&&!nurseCovered(d)){
@@ -2690,7 +2702,7 @@ function genDraft(scope){
   // ══════════════════════════════════════════════
   {
     // 職種グループ（看護 / 介護＝介護士＋介護福祉士）。管理者も看護・介護の人数に含める
-    const grpOf=s=>s.type==='nurse'?'nurse':((s.type==='care'||s.type==='kfuku')?'care':null);
+    const grpOf=s=>s.type==='nurse'?'nurse':((isCareType(s.type))?'care':null);
     const cntGrp=(d,g)=>S.staffList.filter(s=>countsAsDayStaff(s)&&grpOf(s)===g&&isDayShift((data[s.id]||{})[d])).length;
     const reqGrp=(d,g)=>g==='nurse'?requiredNurse(y,m,d):requiredCare(y,m,d);
     const maxRunOf=s=>maxDayRunOf(s); // 夜勤者3・管理者5・その他4
@@ -2791,7 +2803,7 @@ function genDraft(scope){
   data['_violations']=violations;
 
   // 職種グループ（看護 / 介護＝介護士＋介護福祉士）
-  const grpOf2=s=>s.type==='nurse'?'nurse':((s.type==='care'||s.type==='kfuku')?'care':null);
+  const grpOf2=s=>s.type==='nurse'?'nurse':((isCareType(s.type))?'care':null);
 
   if(scope==='all'){
     saveSch(y,m,data);
@@ -3261,11 +3273,11 @@ async function exportExcelByType(staffType){
   const svcName=staffType==='nurse'?'訪問看護（訪問看護ステーション）':'訪問介護';
   // 役所の正式ファイルをテンプレートに使用（看護／介護で別ファイル）
   const EXCEL_TEMPLATE_B64=staffType==='nurse'?EXCEL_TPL_NS_B64:EXCEL_TPL_KG_B64;
-  // 看護ファイル＝看護師+理学/作業/言語療法士、介護ファイル＝訪問介護員（介護福祉士/介護士）
-  const FILE_TYPES=staffType==='nurse'?['nurse','pt','ot','st']:['care','kfuku'];
-  // 公式様式の職種名に準拠（介護は「訪問介護員」）
-  const JOB_NAME={nurse:'看護職員',pt:'理学療法士',ot:'作業療法士',st:'言語聴覚士',care:'訪問介護員',kfuku:'訪問介護員'};
-  const LIC={nurse:'看護師',pt:'理学療法士',ot:'作業療法士',st:'言語聴覚士',care:'',kfuku:'介護福祉士'};
+  // 看護ファイル＝看護系（バイト除く）、介護ファイル＝介護系すべて（種別定義のグループから自動）
+  const FILE_TYPES=staffType==='nurse'?NURSE_FILE_TYPES:CARE_TYPES;
+  // 公式様式の職種名・資格名は種別定義(job/lic)から取得（新種別も自動対応）
+  const JOB_NAME=t=>jobNameOf(t);
+  const LIC=t=>licNameOf(t);
   const shiftHrs={'日勤':8.0,'A勤':4.0,'P勤':4.0,'研修':8.0,'夜勤':8.0,'夜勤明け':8.0,'休み':0,'有給':0,'空白':0};
   const dayHoursOf=s=>{const v=parseFloat(s&&s.dayHours);return (isFinite(v)&&v>0)?v:8.0;};
   const hoursFor=(s,sh)=>{
@@ -3354,9 +3366,9 @@ async function exportExcelByType(staffType){
         const h1={},h2={};
         for(let d=1;d<=days;d++){const h=dayH[d]||0;const aa=h>0?Math.round(h/2*10)/10:0;h1[d]=aa;h2[d]=h>0?(Math.round(h*10)/10-aa):0;}
         rows.push({job:'管理者',emp:s.empType||'B',lic:'－',name:s.name,hours:h1});
-        rows.push({job:JOB_NAME[s.type]||'看護職員',emp:s.empType||'B',lic:LIC[s.type]||'',name:s.name,hours:h2});
+        rows.push({job:JOB_NAME(s.type)||'看護職員',emp:s.empType||'B',lic:LIC(s.type)||'',name:s.name,hours:h2});
       }else{
-        rows.push({job:JOB_NAME[s.type]||'看護職員',emp:s.empType||'A',lic:LIC[s.type]||'',name:s.name,hours:dayH});
+        rows.push({job:JOB_NAME(s.type)||'看護職員',emp:s.empType||'A',lic:LIC(s.type)||'',name:s.name,hours:dayH});
       }
     });
     return rows;
@@ -3465,10 +3477,10 @@ function printPDF(){
 
   let prevType='';
   const rows=S.staffList.map(s=>{
-    const tcol=s.type==='nurse'?'#185FA5':s.type==='care'?'#3B6D11':'#854F0B';
+    const tcol=s.type==='nurse'?'#185FA5':isCareType(s.type)?'#3B6D11':'#854F0B';
     const ct=counts(s.id);
     let spacer='';
-    if(prevType==='nurse'&&s.type==='care'){
+    if(prevType&&typeGrp(prevType)==='nurse'&&typeGrp(s.type)==='care'){
       spacer=`<tr><td colspan="${days+6}" style="height:3px;border:none;background:#f5f5f5"></td></tr>`;
     }
     prevType=s.type;
@@ -3512,7 +3524,7 @@ function printPDF(){
     <td colspan="5" style="border:0.5px solid #bbb;background:#e8e8e8"></td>
   </tr>`;
   const dayCntRow=pdfCntRow('看護',nurseArrP,false,'#185FA5')
-    +pdfCntRow('介護福祉士・介護士',careArrP,false,'#3B6D11')
+    +pdfCntRow('介護職員（訪問介護員）',careArrP,false,'#3B6D11')
     +pdfCntRow('合計（必要数）',totalArrP,true,'');
 
   const win=window.open('','_blank');
